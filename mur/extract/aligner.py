@@ -16,7 +16,7 @@ class ParserAligner(Elaboratable):
     Take word of data with variable length of bytes consumed, and
     merge it with prefix (while buffering rest of bytes) of next word to produce full word of data
 
-    Data input is expected to consume full word; ignore word; or consume part of word, but only 
+    Data input is expected to consume full word; ignore word; or consume part of word, but only
     once! (at the end of processing)
     """
 
