@@ -16,8 +16,10 @@ class ParserAligner(Elaboratable):
     Take word of data with variable length of bytes consumed, and
     merge it with prefix (while buffering rest of bytes) of next word to produce full word of data
 
-    Data input is expected to consume full word; ignore word; or consume part of word, but only
-    once! (at the end of processing)
+    Assumed stages of flow of data:
+    1) Extractor on input consumes 0 or more full words of data
+    2) At end of extractor range, only once, it consumes partial word of data.
+    3) All next words are fully forwarded to next extractor (consumed = 0), and should be re-aligned to LSB
     """
 
     def __init__(self):
@@ -40,12 +42,14 @@ class ParserAligner(Elaboratable):
         m.submodules.din_forwarder_connector = ConnectTrans(self.din_forwarder.read, self.din_int)
 
         buffer = Signal(self.params.word_bits)
-        buffer_consumed = Signal(6)
-        buffer_end_pending = Signal(6)
+        buffer_consumed = Signal(range(self.params.word_bits // 8 + 1))
+        buffer_end_pending = Signal(range(self.params.word_bits // 8 + 1))
 
         output = Signal(self.params.word_bits)
-        output_end_of_packet = Signal(6)
+        output_end_of_packet = Signal(range(self.params.word_bits // 8 + 1))
         output_next_protocol = Signal(self.params.next_proto_bits)
+        output_error = Signal()
+        buffer_error = Signal()
         output_v = Signal()
 
         quadoctet_bits = 8 * 4
@@ -59,15 +63,19 @@ class ParserAligner(Elaboratable):
             m.d.sync += output_end_of_packet.eq(0)
 
             log.debug(m, True, "aligned_output {} {:x} {:x}", output_v, output, buffer)
+
+            end_of_packet = Mux(output_v, output_end_of_packet, buffer_end_pending)
+
             return {
                 "data": Mux(output_v, output, buffer),
                 "next_proto": output_next_protocol,
-                "end_of_packet": Mux(output_v, output_end_of_packet, buffer_end_pending),
+                "end_of_packet": end_of_packet,
+                "error": Mux(end_of_packet, Mux(output_v, output_error, buffer_error), 0),
             }
 
         # second ready condition may be replaced with assert
         @def_method(m, self.din_int, ready=~buffer_end_pending.any() & ~(output_v & ~self.dout.run))
-        def _(data, quadoctets_consumed, end_of_packet, next_proto):
+        def _(data, quadoctets_consumed, end_of_packet, next_proto, error):
 
             with m.If(quadoctets_consumed == 0):
                 l_size = ((quadoctet_count - buffer_consumed) * quadoctet_bits).as_unsigned()
@@ -81,11 +89,13 @@ class ParserAligner(Elaboratable):
                 with m.If(end_of_packet):
                     with m.If(end_of_packet <= buffer_consumed * 4):
                         m.d.sync += output_end_of_packet.eq(end_of_packet + (quadoctet_count - buffer_consumed) * 4)
+                        m.d.sync += output_error.eq(error)
                     with m.Else():
                         m.d.sync += buffer.eq(data >> r_size)
                         m.d.sync += buffer_end_pending.eq(end_of_packet - buffer_consumed * 4)
+                        m.d.sync += buffer_error.eq(error)
                 with m.Else():
-                    m.d.sync += buffer.eq(data >> r_size)  # hey - this shift is not needed in both cases?
+                    m.d.sync += buffer.eq(data >> r_size)
 
             with m.Elif(quadoctets_consumed != quadoctet_count):
 
@@ -95,6 +105,7 @@ class ParserAligner(Elaboratable):
                     m.d.sync += output.eq(data >> (quadoctets_consumed * quadoctet_bits))
                     m.d.sync += output_v.eq(1)
                     m.d.sync += output_end_of_packet.eq(end_of_packet - quadoctets_consumed * 4)
+                    m.d.sync += output_error.eq(error)
                 with m.Else():
                     m.d.sync += buffer.eq(data >> (quadoctets_consumed * quadoctet_bits))
                     m.d.sync += buffer_consumed.eq(quadoctets_consumed)
@@ -105,7 +116,5 @@ class ParserAligner(Elaboratable):
             log.debug(
                 m, True, "din run \nout {:x} \nbuffer {:x} \nin {:x} c {:x}", output, buffer, data, quadoctets_consumed
             )
-
-        # log.error(m, self.dout.ready & ~self.dout.run, "dout is not drained")
 
         return m

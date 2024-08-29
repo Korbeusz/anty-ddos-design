@@ -10,7 +10,7 @@ class ProtoParserLayouts:
         This is a maximum amout of data transmitted at 100Gbps link. It also equals maximum header frame size (IPv6).
         """
 
-        self.end_of_packet = ("end_of_packet", range(Params().word_bits // 8))
+        self.end_of_packet = ("end_of_packet", range((Params().word_bits // 8) + 1))
         """
         Non-zero if there was an end of the packet at octet of signal value.
         """
@@ -26,7 +26,7 @@ class ProtoParserLayouts:
             self.error,
         )
 
-        self.quadoctets_consumed = ("quadoctets_consumed", Params().word_bits // (8 * 4))
+        self.quadoctets_consumed = ("quadoctets_consumed", range((Params().word_bits // (8 * 4)) + 1))
         """ how many 4's of octets were parsed. Every header is aligned to 4's of octets (32B) """
 
         self.parser_out_layout = make_layout(
