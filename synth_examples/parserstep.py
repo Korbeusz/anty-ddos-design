@@ -54,7 +54,6 @@ class ParserStepTop(Component):
             with condition(m) as cond:
                 with cond(packet.next_proto == 1):
                     parser0_in.write(m, packet)
-                    # do as one method??? yes
                     aligner.din(m, parser0_out.read(m))
 
                 with cond(packet.next_proto == 2):

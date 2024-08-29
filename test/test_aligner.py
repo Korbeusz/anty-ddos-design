@@ -21,8 +21,11 @@ class TestAligner(TestCaseWithSimulator):
 
         self.packets = [
             [randint(0x0, 0xFF) for _ in range(randint(self.octets_in_word, self.octets_in_word * 3))]
+            # [randint(0x0, 0xFF) for _ in range(randint(1, self.octets_in_word * 3))]
             for _ in range(self.packets)
         ]
+        # FIXME: separate flag/condition is neded to forward error/end of packet in case full packet is consumed
+        # then output from aligner is invalid {eop: 0, data:0} (currently no support for empty end_of_packets)
 
         self.inputq = deque()
         self.outputq = deque()

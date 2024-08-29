@@ -12,6 +12,7 @@ class EthernetParser(Elaboratable):
         ("vlan", 4 * 8),
         ("vlan_v", 1),
         ("ethertype", 2 * 8),
+        ("valid", 1),
     )
 
     class ProtoOut(IntFlag):
@@ -28,7 +29,13 @@ class EthernetParser(Elaboratable):
 
     def elaborate(self, platform):
         m = TModule()
-        with Transaction().body(m):
+
+        finished = Signal()
+        parser_error = Signal()
+        parser_error_comb = Signal()  # TODO: rework error interface
+        # split to recoverable and non-recoverable errors? disable updating hashes on malformed packets?
+
+        with Transaction().body(m):  # TODO: switch to method
             din = self.din(m)
 
             parsed = Signal(self.LAYOUT)
@@ -52,13 +59,26 @@ class EthernetParser(Elaboratable):
                 with m.Default():
                     m.d.av_comb += proto_out.eq(self.PROTO_OUT.UNKNOWN)
 
+            m.d.comb += parsed.valid.eq(~finished)
+
+            m.d.sync += finished.eq(1)
+
+            packet_length = Mux(parsed.vlan_v, 18 // 4, 14 // 4)
+            with m.If(~finished & din.end_of_packet.any() & (packet_length < din.end_of_packet)):
+                m.d.sync += parser_error.eq(1)
+                m.d.av_comb += parser_error_comb.eq(1)
+
+            with m.If(din.end_of_packet.any()):
+                m.d.sync += finished.eq(0)
+
             self.dout(
                 m,
                 {
                     "data": din.data,
-                    "quadoctets_consumed": Mux(parsed.vlan_v, 18 // 4, 14 // 4),
+                    "quadoctets_consumed": Mux(finished, 0, packet_length // 4),  # move to separate flags?
                     "next_proto": proto_out,
                     "end_of_packet": din.end_of_packet,
+                    "error": din.error | parser_error | parser_error_comb,
                 },
             )
 
