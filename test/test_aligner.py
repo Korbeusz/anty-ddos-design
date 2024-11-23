@@ -20,12 +20,9 @@ class TestAligner(TestCaseWithSimulator):
         self.octets_in_word = self.params.word_bits // 8
 
         self.packets = [
-            [randint(0x0, 0xFF) for _ in range(randint(self.octets_in_word, self.octets_in_word * 3))]
-            # [randint(0x0, 0xFF) for _ in range(randint(1, self.octets_in_word * 3))]
+            [randint(0x0, 0xFF) for _ in range(randint(1, self.octets_in_word * 3))]
             for _ in range(self.packets)
         ]
-        # FIXME: separate flag/condition is neded to forward error/end of packet in case full packet is consumed
-        # then output from aligner is invalid {eop: 0, data:0} (currently no support for empty end_of_packets)
 
         self.inputq = deque()
         self.outputq = deque()
@@ -37,7 +34,8 @@ class TestAligner(TestCaseWithSimulator):
             return res
 
         def end_of_packet_from_index(p: list[int], i: int):
-            return 0 if len(p) > (i + 1) * self.octets_in_word else len(p) - i * self.octets_in_word
+            eop = len(p) <= (i + 1) * self.octets_in_word 
+            return (eop, len(p) - i * self.octets_in_word if eop else 0)
 
         for p in self.packets:
             fully_consumed_words = randint(0, max(0, (len(p) // self.octets_in_word) - 1))
@@ -47,7 +45,7 @@ class TestAligner(TestCaseWithSimulator):
                 else (randint(4, min(self.octets_in_word, len(p) - fully_consumed_words * self.octets_in_word)) // 4)
             )
             next_proto = randint(0, 1)
-            error = randint(0, 1)
+            error = randint(0, 2) == 0
 
             for i in range(fully_consumed_words):
                 self.inputq.append(
@@ -55,8 +53,10 @@ class TestAligner(TestCaseWithSimulator):
                         "data": data_word_from_index(p, i),
                         "quadoctets_consumed": self.octets_in_word // 4,
                         "end_of_packet": 0,
+                        "end_of_packet_len": 0,
+                        "extract_range_end": 0,
                         "next_proto": 0,
-                        "error": 0,
+                        "error_drop": 0,
                     }
                 )
 
@@ -64,9 +64,11 @@ class TestAligner(TestCaseWithSimulator):
                 {
                     "data": data_word_from_index(p, fully_consumed_words),
                     "quadoctets_consumed": partial_consumed_length_qo,
-                    "end_of_packet": end_of_packet_from_index(p, fully_consumed_words),
+                    "end_of_packet": end_of_packet_from_index(p, fully_consumed_words)[0],
+                    "end_of_packet_len": end_of_packet_from_index(p, fully_consumed_words)[1],
+                    "extract_range_end": 1,
                     "next_proto": next_proto,
-                    "error": error if end_of_packet_from_index(p, fully_consumed_words) else 0,
+                    "error_drop": error,
                 }
             )
 
@@ -75,28 +77,33 @@ class TestAligner(TestCaseWithSimulator):
                     {
                         "data": data_word_from_index(p, i),
                         "quadoctets_consumed": 0,
-                        "end_of_packet": end_of_packet_from_index(p, i),
+                        "end_of_packet": end_of_packet_from_index(p, i)[0],
+                        "end_of_packet_len": end_of_packet_from_index(p, i)[1],
+                        "extract_range_end": 0,
                         "next_proto": 0,
-                        "error": error if end_of_packet_from_index(p, i) else 0,
+                        "error_drop": 0, 
                     }
                 )
 
-            remaining = p[fully_consumed_words * self.octets_in_word + partial_consumed_length_qo * 4 :]
-            for i in range((len(remaining) + self.octets_in_word - 1) // self.octets_in_word):
-                self.outputq.append(
-                    {
-                        "data": data_word_from_index(remaining, i),
-                        "end_of_packet": end_of_packet_from_index(remaining, i),
-                        "next_proto": next_proto,
-                        "error": error if end_of_packet_from_index(remaining, i) else 0,
-                    }
-                )
+            if not error:
+                remaining = p[fully_consumed_words * self.octets_in_word + partial_consumed_length_qo * 4 :]
+                for i in range((len(remaining) + self.octets_in_word - 1) // self.octets_in_word):
+                    self.outputq.append(
+                        {
+                            "data": data_word_from_index(remaining, i),
+                            "end_of_packet": end_of_packet_from_index(remaining, i)[0],
+                            "end_of_packet_len": end_of_packet_from_index(remaining, i)[1],
+                            "next_proto": next_proto,
+                        }
+                    )
+                if not remaining:
+                    self.outputq.append({"data": 0, "end_of_packet": True, "end_of_packet_len": 0, "next_proto": next_proto})
 
     @def_method_mock(lambda self: self.dut.din, enable=lambda self: self.inputq and random() < 0.6)
     def din_process(self):
         print("i", self.inputq[0])
-        print(f"{self.inputq[0]['data']:x}")
-        print(f"{self.inputq[0]['data']>>(self.inputq[0]['quadoctets_consumed']*4*8):x}")
+        print(f"IN{self.inputq[0]['data']:x}")
+        print(f"IF{self.inputq[0]['data']>>(self.inputq[0]['quadoctets_consumed']*4*8):x}")
         if self.inputq[0]["end_of_packet"]:
             print("===========")
         return self.inputq.popleft()
@@ -104,7 +111,7 @@ class TestAligner(TestCaseWithSimulator):
     @def_method_mock(lambda self: self.dut.dout)
     def dout_process(self, arg):
         print("oo", arg)
-        print(f"{arg['data']:x}")
+        print(f"OT{arg['data']:x}")
         assert arg == self.outputq.popleft()
 
     def active_process(self):
