@@ -1,14 +1,13 @@
 from mur.params import Params
 from mur.extract.aligner import ParserAligner
 
-from transactron.testing import TestCaseWithSimulator, SimpleTestCircuit, def_method_mock
+from transactron.testing import TestCaseWithSimulator, SimpleTestCircuit
 
 from random import randint, random, seed
 from collections import deque
 
 
 class TestAligner(TestCaseWithSimulator):
-
     def setup_method(self):
         seed(42)
 
@@ -99,26 +98,31 @@ class TestAligner(TestCaseWithSimulator):
                 if not remaining:
                     self.outputq.append({"data": 0, "end_of_packet": True, "end_of_packet_len": 0, "next_proto": next_proto})
 
-    @def_method_mock(lambda self: self.dut.din, enable=lambda self: self.inputq and random() < 0.6)
-    def din_process(self):
-        print("i", self.inputq[0])
-        print(f"IN{self.inputq[0]['data']:x}")
-        print(f"IF{self.inputq[0]['data']>>(self.inputq[0]['quadoctets_consumed']*4*8):x}")
-        if self.inputq[0]["end_of_packet"]:
-            print("===========")
-        return self.inputq.popleft()
+    async def din_process(self, sim):
+        while self.inputq:
+            while random() >= 0.6:
+                await sim.tick()
+            
+            print("i", self.inputq[0])
+            print(f"IN{self.inputq[0]['data']:x}")
+            print(f"IF{self.inputq[0]['data']>>(self.inputq[0]['quadoctets_consumed']*4*8):x}")
+            
+            if self.inputq[0]["end_of_packet"]:
+                print("===========")
 
-    @def_method_mock(lambda self: self.dut.dout)
-    def dout_process(self, arg):
-        print("oo", arg)
-        print(f"OT{arg['data']:x}")
-        assert arg == self.outputq.popleft()
+            await self.dut.din.call(sim, self.inputq.popleft())
 
-    def active_process(self):
+
+    async def dout_process(self, sim):
+        # How did it work with method_mock before? New use case?
         while self.outputq:
-            yield
+            arg = await self.dut.dout.call(sim)
+            print("oo", arg)
+            print(f"OT{arg['data']:x}")
+            assert arg == self.outputq.popleft()
 
     def test_randomized(self):
         self.dut = SimpleTestCircuit(ParserAligner())
         with self.run_simulation(self.dut) as sim:
-            sim.add_sync_process(self.active_process)
+            sim.add_testbench(self.din_process)
+            sim.add_testbench(self.dout_process)
