@@ -19,8 +19,7 @@ class TestAligner(TestCaseWithSimulator):
         self.octets_in_word = self.params.word_bits // 8
 
         self.packets = [
-            [randint(0x0, 0xFF) for _ in range(randint(1, self.octets_in_word * 3))]
-            for _ in range(self.packets)
+            [randint(0x0, 0xFF) for _ in range(randint(1, self.octets_in_word * 3))] for _ in range(self.packets)
         ]
 
         self.inputq = deque()
@@ -33,7 +32,7 @@ class TestAligner(TestCaseWithSimulator):
             return res
 
         def end_of_packet_from_index(p: list[int], i: int):
-            eop = len(p) <= (i + 1) * self.octets_in_word 
+            eop = len(p) <= (i + 1) * self.octets_in_word
             return (eop, len(p) - i * self.octets_in_word if eop else 0)
 
         for p in self.packets:
@@ -80,7 +79,7 @@ class TestAligner(TestCaseWithSimulator):
                         "end_of_packet_len": end_of_packet_from_index(p, i)[1],
                         "extract_range_end": 0,
                         "next_proto": 0,
-                        "error_drop": 0, 
+                        "error_drop": 0,
                     }
                 )
 
@@ -96,22 +95,23 @@ class TestAligner(TestCaseWithSimulator):
                         }
                     )
                 if not remaining:
-                    self.outputq.append({"data": 0, "end_of_packet": True, "end_of_packet_len": 0, "next_proto": next_proto})
+                    self.outputq.append(
+                        {"data": 0, "end_of_packet": True, "end_of_packet_len": 0, "next_proto": next_proto}
+                    )
 
     async def din_process(self, sim):
         while self.inputq:
             while random() >= 0.6:
                 await sim.tick()
-            
+
             print("i", self.inputq[0])
             print(f"IN{self.inputq[0]['data']:x}")
             print(f"IF{self.inputq[0]['data']>>(self.inputq[0]['quadoctets_consumed']*4*8):x}")
-            
+
             if self.inputq[0]["end_of_packet"]:
                 print("===========")
 
             await self.dut.din.call(sim, self.inputq.popleft())
-
 
     async def dout_process(self, sim):
         # How did it work with method_mock before? New use case?

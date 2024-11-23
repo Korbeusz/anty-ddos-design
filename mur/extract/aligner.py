@@ -1,9 +1,10 @@
 from amaranth import *
+
 from transactron import *
 from transactron.lib import logging
+from transactron.lib.connectors import ConnectTrans, Forwarder
 
 from mur.params import Params
-from transactron.lib.connectors import ConnectTrans, Forwarder
 from .interfaces import ProtoParserLayouts
 
 log = logging.HardwareLogger("extract.aligner")
@@ -75,7 +76,7 @@ class ParserAligner(Elaboratable):
                 "end_of_packet": end_of_packet_flag,
                 "end_of_packet_len": end_of_packet_len,
             }
-        
+
         parser_fwd = Signal()
 
         # second ready condition may be replaced with assert
@@ -105,10 +106,10 @@ class ParserAligner(Elaboratable):
             with m.Elif(extract_range_end):
                 m.d.sync += parser_fwd.eq(~end_of_packet)
                 m.d.sync += output_next_protocol.eq(next_proto)
-                
-                with m.If(error_drop): # Drop errors should be forwarded in result flow
+
+                with m.If(error_drop):  # Drop errors should be forwarded in result flow
                     # output buffer is already in clean state
-                    m.d.sync += parser_fwd.eq(0) # don't do anything until next extract_range_end
+                    m.d.sync += parser_fwd.eq(0)  # don't do anything until next extract_range_end
                 with m.Elif(end_of_packet):
                     m.d.sync += output.eq(data >> (quadoctets_consumed * quadoctet_bits))
                     m.d.sync += output_v.eq(1)

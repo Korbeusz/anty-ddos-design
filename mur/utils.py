@@ -12,6 +12,6 @@ def swap_endianess(m: ModuleLike, s: Value):
 
     return r
 
+
 def select_field_be(m: ModuleLike, target: Signal, source: Signal, offset: Value | int):
     return target.eq(swap_endianess(m, source.bit_select(offset, target.shape().width)))
-

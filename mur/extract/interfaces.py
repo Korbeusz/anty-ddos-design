@@ -1,6 +1,7 @@
 from mur.params import Params
 from transactron.utils.transactron_helpers import make_layout, extend_layout
 
+
 class ProtoParserLayouts:
     def __init__(self):
         self.data_aligned = ("data", Params().word_bits)
@@ -14,8 +15,8 @@ class ProtoParserLayouts:
         """
         Indicates last word of data for packet. (Packet may be empty).
         """
-        
-        self.end_of_packet_len = ("end_of_packet_len", range((Params().word_bits // 8)+1))
+
+        self.end_of_packet_len = ("end_of_packet_len", range((Params().word_bits // 8) + 1))
         """
         Number of data octets is end_of_frame packet.
         May be 0 for no data. Ignored when end_of_packet not set
@@ -26,7 +27,7 @@ class ProtoParserLayouts:
             self.end_of_packet,
             self.end_of_packet_len,
         )
-        
+
         self.next_protocol = ("next_proto", Params().next_proto_bits)
         """
         Internal representation of next protocol parser to forward packet. Sampled at `extract_range_end`. 
@@ -34,7 +35,7 @@ class ProtoParserLayouts:
         """
 
         self.align_out_layout = extend_layout(self.parser_in_layout, self.next_protocol)
-        
+
         self.data_out = ("data", Params().word_bits)
         """
         Data output from parser. Prefix of it may be consumed by parser. See `parsing_ended`
@@ -57,7 +58,7 @@ class ProtoParserLayouts:
         """
 
         # NOTE: There is currently no need for it, but there are possibly two other non-fatal error classes
-        # One that causes `qo_consumed` to be invalid, and parsing shouldn't be forwarded to next parser, and other that parsing may continue, but 
+        # One that causes `qo_consumed` to be invalid, and parsing shouldn't be forwarded to next parser, and other that parsing may continue, but
         # data from this parses may be incorrect. Introduce if there is need for it.
         # Both may be singalled via result flow and first one report error_drop to stop parsing
 
