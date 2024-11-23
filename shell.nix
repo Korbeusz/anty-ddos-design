@@ -2,13 +2,7 @@
 
 
 rpkgs.mkShell {
-    nativeBuildInputs = with spkgs;  [ 
-        verilator 
-        gcc
-        libgcc
-        zlib
-        nodejs_22
-    ];
+    nativeBuildInputs = with spkgs;  [ ];
     buildInputs =  [ ];
     shellHook = ''
         . .venv/bin/activate
