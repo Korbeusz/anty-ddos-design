@@ -48,7 +48,7 @@ class ProtoParserLayouts:
         it is redundant. Some of parser outputs are sampled at this flag. Must be held for only for one cycle.
         """
 
-        self.octets_consumed = ("octets_consumed", range((Params().word_bits) + 1))
+        self.octets_consumed = ("octets_consumed", range((Params().word_bits // 8) + 1))
         """ How many octets were parsed and consumed"""
 
         self.error_drop = ("error_drop", 1)
