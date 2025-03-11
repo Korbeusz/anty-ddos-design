@@ -37,24 +37,22 @@ class ParserAligner(Elaboratable):
     def elaborate(self, platform):
         m = TModule()
 
-        # Forwarder is needed to hold input when buffer_end_pending condition is produced.
-        # it should not limit throughput as it balances out with output data
         m.submodules.din_forwarder = self.din_forwarder
         m.submodules.din_forwarder_connector = ConnectTrans(self.din_forwarder.read, self.din_int)
 
         buffer = Signal(self.params.word_bits)
-        buffer_consumed = Signal(range(self.params.word_bits // 8 + 1))
-        buffer_end_pending = Signal(range(self.params.word_bits // 8 + 1))
+        buffer_consumed = Signal(range(self.params.word_bits // 8 + 1))  # Octet precision
+        buffer_end_pending = Signal(range(self.params.word_bits // 8 + 1))  # Octet precision
         buffer_end_pending_flag = Signal()
 
         output = Signal(self.params.word_bits)
-        output_end_of_packet = Signal(range(self.params.word_bits // 8 + 1))
+        output_end_of_packet = Signal(range(self.params.word_bits // 8 + 1))  # Octet precision
         output_end_of_packet_flag = Signal()
         output_next_protocol = Signal(self.params.next_proto_bits)
         output_v = Signal()
 
-        quadoctet_bits = 8 * 4
-        quadoctet_count = self.params.word_bits // quadoctet_bits
+        octet_bits = 8  # Single octet (1 byte)
+        octet_count = self.params.word_bits // octet_bits  # Number of octets in a word
 
         @def_method(m, self.dout, ready=output_v | buffer_end_pending_flag)
         def _():
@@ -79,12 +77,11 @@ class ParserAligner(Elaboratable):
 
         parser_fwd = Signal()
 
-        # second ready condition may be replaced with assert
         @def_method(m, self.din_int, ready=~buffer_end_pending.any() & ~(output_v & ~self.dout.run))
-        def _(data, quadoctets_consumed, extract_range_end, next_proto, end_of_packet, end_of_packet_len, error_drop):
+        def _(data, octets_consumed, extract_range_end, next_proto, end_of_packet, end_of_packet_len, error_drop):
             with m.If(parser_fwd):
-                l_size = ((quadoctet_count - buffer_consumed) * quadoctet_bits).as_unsigned()
-                r_size = ((buffer_consumed) * quadoctet_bits).as_unsigned()
+                l_size = ((octet_count - buffer_consumed) * octet_bits).as_unsigned()
+                r_size = (buffer_consumed * octet_bits).as_unsigned()
 
                 mask = (1 << l_size) - 1
                 m.d.sync += output.eq(buffer & mask | data << l_size)
@@ -93,13 +90,13 @@ class ParserAligner(Elaboratable):
 
                 with m.If(end_of_packet):
                     m.d.sync += parser_fwd.eq(0)
-                    with m.If(end_of_packet_len <= buffer_consumed * 4):
-                        m.d.sync += output_end_of_packet.eq(end_of_packet_len + (quadoctet_count - buffer_consumed) * 4)
+                    with m.If(end_of_packet_len <= buffer_consumed):
+                        m.d.sync += output_end_of_packet.eq(end_of_packet_len + (octet_count - buffer_consumed))
                         m.d.sync += output_end_of_packet_flag.eq(1)
                     with m.Else():
                         m.d.sync += buffer.eq(data >> r_size)
                         m.d.sync += buffer_end_pending_flag.eq(1)
-                        m.d.sync += buffer_end_pending.eq(end_of_packet_len - buffer_consumed * 4)
+                        m.d.sync += buffer_end_pending.eq(end_of_packet_len - buffer_consumed)
                 with m.Else():
                     m.d.sync += buffer.eq(data >> r_size)
 
@@ -107,23 +104,22 @@ class ParserAligner(Elaboratable):
                 m.d.sync += parser_fwd.eq(~end_of_packet)
                 m.d.sync += output_next_protocol.eq(next_proto)
 
-                with m.If(error_drop):  # Drop errors should be forwarded in result flow
-                    # output buffer is already in clean state
-                    m.d.sync += parser_fwd.eq(0)  # don't do anything until next extract_range_end
+                with m.If(error_drop):
+                    m.d.sync += parser_fwd.eq(0)
                 with m.Elif(end_of_packet):
-                    m.d.sync += output.eq(data >> (quadoctets_consumed * quadoctet_bits))
+                    m.d.sync += output.eq(data >> (octets_consumed * octet_bits))
                     m.d.sync += output_v.eq(1)
-                    m.d.sync += output_end_of_packet.eq(end_of_packet_len - quadoctets_consumed * 4)
+                    m.d.sync += output_end_of_packet.eq(end_of_packet_len - octets_consumed)
                     m.d.sync += output_end_of_packet_flag.eq(1)
                 with m.Else():
-                    m.d.sync += buffer.eq(data >> (quadoctets_consumed * quadoctet_bits))
-                    m.d.sync += buffer_consumed.eq(quadoctets_consumed)
+                    m.d.sync += buffer.eq(data >> (octets_consumed * octet_bits))
+                    m.d.sync += buffer_consumed.eq(octets_consumed)
 
             with m.Else():
-                m.d.sync += buffer_consumed.eq(quadoctet_count)
+                m.d.sync += buffer_consumed.eq(octet_count)
 
             log.debug(
-                m, True, "din run \nout {:x} \nbuffer {:x} \nin {:x} c {:x}", output, buffer, data, quadoctets_consumed
+                m, True, "din run \nout {:x} \nbuffer {:x} \nin {:x} c {:x}", output, buffer, data, octets_consumed
             )
 
         return m

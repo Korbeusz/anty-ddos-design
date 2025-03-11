@@ -44,12 +44,12 @@ class ProtoParserLayouts:
         self.extract_range_end = ("extract_range_end", 1)
         """ 
         Flag indicating that parser reached end of data of interest and all next words until the end of the packet should be forwarded.
-        This means that parser is not allowed to consume any more data to end_of_packet and `quadoctets_consumed` is ignored, because
+        This means that parser is not allowed to consume any more data to end_of_packet and `octets_consumed` is ignored, because
         it is redundant. Some of parser outputs are sampled at this flag. Must be held for only for one cycle.
         """
 
-        self.quadoctets_consumed = ("quadoctets_consumed", range((Params().word_bits // (8 * 4)) + 1))
-        """ How many 4's of octets were parsed and consumed. Every header is aligned to 4's of octets (32B) """
+        self.octets_consumed = ("octets_consumed", range((Params().word_bits) + 1))
+        """ How many octets were parsed and consumed"""
 
         self.error_drop = ("error_drop", 1)
         """
@@ -64,7 +64,7 @@ class ProtoParserLayouts:
 
         self.parser_out_layout = self.align_in_layout = make_layout(
             self.data_out,
-            self.quadoctets_consumed,
+            self.octets_consumed,
             self.extract_range_end,
             self.next_protocol,
             self.end_of_packet,

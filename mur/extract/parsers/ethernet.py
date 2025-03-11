@@ -51,11 +51,12 @@ class EthernetParser(Elaboratable):
             m.d.av_comb += [
                 select_field_be(m, parsed.dst_mac, data, 0),
                 select_field_be(m, parsed.src_mac, data, 6 * 8),
-                select_field_be(m, parsed.vlan, data, 14 * 8),
+                
             ]
 
             m.d.av_comb += parsed.vlan_v.eq(swap_endianess(m, data.bit_select(12 * 8, 2 * 8)) == 0x8100)
 
+            m.d.av_comb += select_field_be(m, parsed.vlan, Mux(parsed.vlan_v,data, 0), 14 * 8)
             m.d.av_comb += select_field_be(m, parsed.ethertype, data, Mux(parsed.vlan_v, 16 * 8, 12 * 8))
 
             proto_out = Signal(self.params.next_proto_bits)
@@ -71,7 +72,6 @@ class EthernetParser(Elaboratable):
 
             m.d.sync += parsing_finished.eq(~end_of_packet)  # end of packet is always needed if module seen start of it
 
-            packet_length_qo = Mux(parsed.vlan_v, 18 // 4, 14 // 4)
             packet_length = Mux(parsed.vlan_v, 18, 14)
 
             m.d.av_comb += runt_packet.eq((packet_length > end_of_packet_len) & end_of_packet)
@@ -91,7 +91,7 @@ class EthernetParser(Elaboratable):
 
             return {
                 "data": data,
-                "quadoctets_consumed": packet_length_qo,
+                "octets_consumed": packet_length,
                 "extract_range_end": ~parsing_finished,
                 "next_proto": proto_out,
                 "end_of_packet_len": end_of_packet_len,
