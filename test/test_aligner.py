@@ -37,10 +37,10 @@ class TestAligner(TestCaseWithSimulator):
 
         for p in self.packets:
             fully_consumed_words = randint(0, max(0, (len(p) // self.octets_in_word) - 1))
-            partial_consumed_length_qo = (
+            partial_consumed_length_octets = (
                 0
-                if len(p) < 4
-                else (randint(4, min(self.octets_in_word, len(p) - fully_consumed_words * self.octets_in_word)) // 4)
+                if len(p) < 1
+                else randint(1, min(self.octets_in_word, len(p) - fully_consumed_words * self.octets_in_word))
             )
             next_proto = randint(0, 1)
             error = randint(0, 2) == 0
@@ -49,7 +49,7 @@ class TestAligner(TestCaseWithSimulator):
                 self.inputq.append(
                     {
                         "data": data_word_from_index(p, i),
-                        "quadoctets_consumed": self.octets_in_word // 4,
+                        "octets_consumed": self.octets_in_word,
                         "end_of_packet": 0,
                         "end_of_packet_len": 0,
                         "extract_range_end": 0,
@@ -61,7 +61,7 @@ class TestAligner(TestCaseWithSimulator):
             self.inputq.append(
                 {
                     "data": data_word_from_index(p, fully_consumed_words),
-                    "quadoctets_consumed": partial_consumed_length_qo,
+                    "octets_consumed": partial_consumed_length_octets,
                     "end_of_packet": end_of_packet_from_index(p, fully_consumed_words)[0],
                     "end_of_packet_len": end_of_packet_from_index(p, fully_consumed_words)[1],
                     "extract_range_end": 1,
@@ -74,7 +74,7 @@ class TestAligner(TestCaseWithSimulator):
                 self.inputq.append(
                     {
                         "data": data_word_from_index(p, i),
-                        "quadoctets_consumed": 0,
+                        "octets_consumed": 0,
                         "end_of_packet": end_of_packet_from_index(p, i)[0],
                         "end_of_packet_len": end_of_packet_from_index(p, i)[1],
                         "extract_range_end": 0,
@@ -84,7 +84,7 @@ class TestAligner(TestCaseWithSimulator):
                 )
 
             if not error:
-                remaining = p[fully_consumed_words * self.octets_in_word + partial_consumed_length_qo * 4 :]
+                remaining = p[fully_consumed_words * self.octets_in_word + partial_consumed_length_octets:]
                 for i in range((len(remaining) + self.octets_in_word - 1) // self.octets_in_word):
                     self.outputq.append(
                         {
@@ -106,7 +106,7 @@ class TestAligner(TestCaseWithSimulator):
 
             print("i", self.inputq[0])
             print(f"IN{self.inputq[0]['data']:x}")
-            print(f"IF{self.inputq[0]['data']>>(self.inputq[0]['quadoctets_consumed']*4*8):x}")
+            print(f"IF{self.inputq[0]['data']>>(self.inputq[0]['octets_consumed']*8):x}")
 
             if self.inputq[0]["end_of_packet"]:
                 print("===========")
@@ -114,7 +114,6 @@ class TestAligner(TestCaseWithSimulator):
             await self.dut.din.call(sim, self.inputq.popleft())
 
     async def dout_process(self, sim):
-        # How did it work with method_mock before? New use case?
         while self.outputq:
             arg = await self.dut.dout.call(sim)
             print("oo", arg)
