@@ -36,7 +36,8 @@ class ParserAligner(Elaboratable):
 
     def elaborate(self, platform):
         m = TModule()
-
+        # Forwarder is needed to hold input when buffer_end_pending condition is produced.
+        # it should not limit throughput as it balances out with output data
         m.submodules.din_forwarder = self.din_forwarder
         m.submodules.din_forwarder_connector = ConnectTrans(self.din_forwarder.read, self.din_int)
 
@@ -77,6 +78,7 @@ class ParserAligner(Elaboratable):
 
         parser_fwd = Signal()
 
+        # second ready condition may be replaced with assert
         @def_method(m, self.din_int, ready=~buffer_end_pending.any() & ~(output_v & ~self.dout.run))
         def _(data, octets_consumed, extract_range_end, next_proto, end_of_packet, end_of_packet_len, error_drop):
             with m.If(parser_fwd):
@@ -104,8 +106,9 @@ class ParserAligner(Elaboratable):
                 m.d.sync += parser_fwd.eq(~end_of_packet)
                 m.d.sync += output_next_protocol.eq(next_proto)
 
-                with m.If(error_drop):
-                    m.d.sync += parser_fwd.eq(0)
+                with m.If(error_drop): # Drop errors should be forwarded in result flow
+                    # output buffer is already in clean state
+                    m.d.sync += parser_fwd.eq(0) # don't do anything until next extract_range_end
                 with m.Elif(end_of_packet):
                     m.d.sync += output.eq(data >> (octets_consumed * octet_bits))
                     m.d.sync += output_v.eq(1)
