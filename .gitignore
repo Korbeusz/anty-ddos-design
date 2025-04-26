@@ -38,3 +38,6 @@ docs/*.rst
 # Synthesis
 build/
 benchmark.json
+
+# Pcap files 
+*.pcap
