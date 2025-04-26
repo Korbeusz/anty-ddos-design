@@ -13,8 +13,7 @@ env.bak/
 venv.bak/
 .python-version
 
-# Verilog files
-*.v
+
 
 # Verilog generation debug files
 *.v.json
