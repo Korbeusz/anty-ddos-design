@@ -303,11 +303,9 @@ wire                       fifo2_rd_en;
 wire                       fifo2_rd_valid;
 wire                       fifo2_empty;
 
-placeholder_module #(
-    .DATA_WIDTH (FIFO_DATA_WIDTH)
-) u_placeholder_mod (
+placeholder_module u_placeholder_mod (
     .clk        (clk100),
-    .rst_n      (cpu_resetn),
+    .rst      (~cpu_resetn),
 
     // FIFO #1 read side
     .in_data    (fifo1_rd_data),
@@ -451,66 +449,86 @@ assign l8_tx_data = (tx_state == TX_SEND)
 
 endmodule
 
-module placeholder_module #(
-    parameter DATA_WIDTH = 520
-)(
-    input                       clk,
-    input                       rst_n,
 
-    // FIFO #1 read side
-    input      [DATA_WIDTH-1:0] in_data,    // data from FIFO #1
-    input                       in_valid,   // indicates in_data is valid this cycle
-    input                       in_empty,   // indicates FIFO #1 is empty
-    output reg                  rd_en_fifo, // read-enable for FIFO #1
 
-    // FIFO #2 write side
-    output reg [DATA_WIDTH-1:0] out_data,   // data to FIFO #2
-    output reg                  wr_en_fifo, // write-enable for FIFO #2
-    input                       out_full    // indicates FIFO #2 is full
-);
-
-    // Decompose fields for readability
-    wire sop_in        = in_data[519];
-    wire eop_in        = in_data[518];
-    wire [5:0] empty_in= in_data[517:512];
-    wire [511:0] dat_in= in_data[511:0];
-
-    // 1) We'll only assert rd_en_fifo if we do NOT have data valid 
-    //    (i.e., in_valid == 0) and FIFO #1 is not empty, and FIFO #2 is not full.
-    // 2) On the cycle in_valid is high, we drive out_data and wr_en_fifo.
-
-    always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            rd_en_fifo <= 1'b0;
-            wr_en_fifo <= 1'b0;
-            out_data   <= {DATA_WIDTH{1'b0}};
-        end else begin
-            // Default: no read, no write this cycle
-            rd_en_fifo <= 1'b0;
-            wr_en_fifo <= 1'b0;
-
-            // If we currently don't have valid data (in_valid=0),
-            // but FIFO #1 is not empty, and FIFO #2 is not full,
-            // request new data from FIFO #1
-            if (!in_valid && !in_empty && !out_full) begin
-                rd_en_fifo <= 1'b1;
-            end
-
-            // If in_valid is high, that means we have stable data from FIFO #1 
-            // in this cycle. We can modify and write to FIFO #2 if it's not full.
-            if (in_valid && !out_full) begin
-                // Modify data (add 1 to 512-bit field)
-                out_data <= {
-                    sop_in,          // pass SOP
-                    eop_in,          // pass EOP
-                    empty_in,        // pass EMPTY
-                    (dat_in + 512'd1)
-                };
-                wr_en_fifo <= 1'b1;
-            end
-        end
+module placeholder_module (in_valid, in_empty, out_full, clk, rst, rd_en_fifo, wr_en_fifo, out_data, in_data);
+  reg \$auto$verilog_backend.cc:2355:dump_module$1  = 0;
+  wire [512:0] \$1 ;
+  reg \$10 ;
+  reg [519:0] \$11 ;
+  wire \$2 ;
+  wire \$3 ;
+  wire \$4 ;
+  wire \$5 ;
+  wire \$6 ;
+  wire \$7 ;
+  wire \$8 ;
+  reg \$9 ;
+  input clk;
+  wire clk;
+  wire [511:0] dat_inc;
+  input [519:0] in_data;
+  wire [519:0] in_data;
+  input in_empty;
+  wire in_empty;
+  input in_valid;
+  wire in_valid;
+  output [519:0] out_data;
+  reg [519:0] out_data = 520'h0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000;
+  input out_full;
+  wire out_full;
+  output rd_en_fifo;
+  reg rd_en_fifo = 1'h0;
+  input rst;
+  wire rst;
+  output wr_en_fifo;
+  reg wr_en_fifo = 1'h0;
+  assign \$1  = in_data[511:0] + 1'h1;
+  assign \$2  = ~ out_full;
+  assign \$3  = in_valid & \$2 ;
+  assign \$4  = ~ in_valid;
+  assign \$5  = ~ in_empty;
+  assign \$6  = \$4  & \$5 ;
+  assign \$7  = ~ out_full;
+  assign \$8  = \$6  & \$7 ;
+  always @(posedge clk)
+    rd_en_fifo <= \$9 ;
+  always @(posedge clk)
+    wr_en_fifo <= \$10 ;
+  always @(posedge clk)
+    out_data <= \$11 ;
+  always @* begin
+    if (\$auto$verilog_backend.cc:2355:dump_module$1 ) begin end
+    \$9  = 1'h0;
+    if (\$3 ) begin
+    end else if (\$8 ) begin
+      \$9  = 1'h1;
     end
-
+    if (rst) begin
+      \$9  = 1'h0;
+    end
+  end
+  always @* begin
+    if (\$auto$verilog_backend.cc:2355:dump_module$1 ) begin end
+    \$10  = 1'h0;
+    if (\$3 ) begin
+      \$10  = 1'h1;
+    end
+    if (rst) begin
+      \$10  = 1'h0;
+    end
+  end
+  always @* begin
+    if (\$auto$verilog_backend.cc:2355:dump_module$1 ) begin end
+    \$11  = out_data;
+    if (\$3 ) begin
+      \$11  = { in_data[519:512], \$1 [511:0] };
+    end
+    if (rst) begin
+      \$11  = 520'h0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000;
+    end
+  end
+  assign dat_inc = \$1 [511:0];
 endmodule
 
 
