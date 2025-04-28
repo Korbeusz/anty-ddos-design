@@ -167,5 +167,3 @@ class CountHashTab(Elaboratable):
             ]
 
         return m
-if __name__ == "__main__":
-    gen_verilog(CountHashTab(size=256, counter_width=16, input_data_width=32), "count_hash.v")
