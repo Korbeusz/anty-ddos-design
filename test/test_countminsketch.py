@@ -31,7 +31,7 @@ class TestCountMinSketch(TestCaseWithSimulator):
         self.data_width = 32
 
         # ── Simulation stimulus ────────────────────────────────────────
-        self.operation_count = 3_000
+        self.operation_count = 10_000
         self.ops: list[tuple[str, int | None]] = []  # ("insert"|"query"|"clear", data)
         self.expected = deque()                      # expected query responses
 
@@ -88,15 +88,16 @@ class TestCountMinSketch(TestCaseWithSimulator):
 
             if op == "insert":
                 await self.dut.insert.call(sim, {"data": data})
+
             elif op == "query":
                 await self.dut.query_req.call(sim, {"data": data})
-                await sim.tick()  # ensure ≥1 cycle before the checker reads
+                 
             else:  # op == "clear"
                 await self.dut.clear.call(sim, {})
-                # Give the DUT enough time to sweep all buckets; "width" is
-                # the worst‑case latency chosen in hardware for *clear*.
-                for _ in range(self.width):
-                    await sim.tick()
+              
+            await sim.tick()
+                
+            
 
     async def checker_process(self, sim):
         """Pulls *query_resp* and compares with the reference model."""
@@ -108,6 +109,7 @@ class TestCountMinSketch(TestCaseWithSimulator):
             assert resp == self.expected.popleft()
             if resp != {"count": 0}:
                 print(f"query_resp: {resp['count']}")
+
 
     # ------------------------------------------------------------------
     #  Top‑level test

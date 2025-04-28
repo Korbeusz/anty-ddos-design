@@ -24,7 +24,7 @@ class TestCountHashTab(TestCaseWithSimulator):
         self.data_width = 32
 
         # ── Simulation stimulus ────────────────────────────────────────
-        self.operation_count = 2_000
+        self.operation_count = 10_000
         self.ops: list[tuple[str, int]] = []  # ("insert"|"query", data)
         self.expected = deque()               # expected query responses
 
