@@ -1,55 +1,46 @@
+from __future__ import annotations
+
 from amaranth import *
 from amaranth.utils import ceil_log2
 from transactron import *
+from transactron.core import Transaction  # for explicit Transaction blocks
 
-# Local import – adjust the path if your project structure differs
+# Local import – adjust the path to your project structure if needed
 from mur.count.CountMinSketch import CountMinSketch
 
 __all__ = ["RollingCountMinSketch"]
 
 
 class RollingCountMinSketch(Elaboratable):
-    """Triple‑buffered **Count‑Min Sketch** with a one‑second sliding window.
+    """Double-buffered **Count-Min Sketch** with background clearing.
 
-    The design instantiates **three** :class:`CountMinSketch` blocks and
-    rotates their roles every *interval* clock cycles::
+    Two internal :class:`~mur.count.CountMinSketch.CountMinSketch` instances are
+    kept and alternated in a *ping-pong* fashion:
 
-        current  ← inserts for the ongoing second
-        last     ← frozen counts of the *previous* second, serves queries
-        standby  ← is being cleared so it is ready to become *current*
+    * **active sketch** – receives *insert* transactions or serves *query* 
+      requests, depending on the *mode* selected with :py:meth:`set_mode`.
+    * **stand-by sketch** – is cleared **automatically** in the background so
+      that it is ready to become the next active sketch on the next role swap.
 
-    After each rotation the following invariants hold:
+    External API (all are *Transactron* :class:`~transactron.core.Method` s)
+    ----------------------------------------------------------------------
+    ``insert(data)``
+        Increment the sketch for *data* (ready **only** in *UPDATE* mode).
+    ``query_req(data)`` / ``query_resp()``
+        One-cycle-latency query interface (ready **only** in *QUERY* mode).
+    ``change_roles()``
+        Swap *active* / *stand-by* sketches.  Ready **only** in *UPDATE* mode
+        *and* after the stand-by sketch has finished its background clear.
+    ``set_mode(mode)``
+        ``mode = 0`` → *UPDATE*, ``mode = 1`` → *QUERY*.
 
-    * *current* has just been cleared and starts collecting fresh data.
-    * *last* can be queried for counts of the *preceding* one‑second window.
-    * *standby* is in the middle of a `clear()` sweep and remains inaccessible
-      to the outside world until the next rotation.
-
-    Parameters
-    ----------
-    depth, width, counter_width, input_data_width
-        Passed straight to the underlying :class:`CountMinSketch` rows.
-    interval_cycles: int
-        Number of **clock cycles** that make up one second in your design.
-        For a 125 MHz Ethernet MAC clock this would be ``interval_cycles=125_000_000``.
-    hash_params: list[tuple[int, int]] | None, optional
-        Optional per‑row universal‑hash coefficients (identical for every
-        sub‑sketch). Defaults to ``[(row + 1, 0) for row in range(depth)]``.
-
-    Public API
-    ----------
-    insert(data)
-        Increment the *current* sketch.
-    query_req(data)
-        Request the count **of the previous second** (served from *last*).
-    query_resp() -> {"count": …}
-        Returns the estimate one cycle later, *mirroring* the latency of the
-        sub‑sketch.
+    The design purposefully mirrors the handshake and arbitration style of
+    :class:`~mur.count.CountMinSketch.CountMinSketch` so that it can be a drop-
+    in replacement in existing data paths.  See the referenced source files
+    for the implementation patterns reused here.
     """
 
-    # ------------------------------------------------------------------ #
-    #  Constructor
-    # ------------------------------------------------------------------ #
+    # ----------------------------- Constructor -----------------------------
     def __init__(
         self,
         *,
@@ -57,128 +48,149 @@ class RollingCountMinSketch(Elaboratable):
         width: int,
         counter_width: int,
         input_data_width: int,
-        interval_cycles: int,
         hash_params: list[tuple[int, int]] | None = None,
     ) -> None:
         if depth < 1:
             raise ValueError("depth must be ≥ 1")
-        if interval_cycles < 2:
-            raise ValueError("interval_cycles must be ≥ 2")
+        self.depth = depth
+        self.width = width
+        self.counter_width = counter_width
+        self.input_data_width = input_data_width
 
-        # ―― Public Transactron API ―――――――――――――――――――――――――――――――――
-        self.insert     = Method(i=[("data", input_data_width)])
-        self.query_req  = Method(i=[("data", input_data_width)])
-        self.query_resp = Method(o=[("count", counter_width)])
+        # ── Public Transactron interface ──────────────────────────────────
+        self.insert = Method(i=[("data", self.input_data_width)])
+        self.query_req = Method(i=[("data", self.input_data_width)])
+        self.query_resp = Method(o=[("count", self.counter_width)])
+        self.change_roles = Method()  # no arguments
+        self.set_mode = Method(i=[("mode", 1)])  # 0 = UPDATE, 1 = QUERY
 
-        # ―― Three rolling sub‑sketches ―――――――――――――――――――――――――――――
-        self.cms: list[CountMinSketch] = []
-        for idx in range(3):
-            cms = CountMinSketch(
-                depth            = depth,
-                width            = width,
-                counter_width    = counter_width,
-                input_data_width = input_data_width,
-                hash_params      = hash_params,
-            )
-            setattr(self, f"_cms{idx}", cms)  # readable signal names
-            self.cms.append(cms)
-
-        # ―― Timing parameters ――――――――――――――――――――――――――――――――――――――
-        self._interval_cycles = interval_cycles
+        # *query_resp* must win arbitration over *query_req* just like in the
+        # underlying *CountMinSketch* implementation. citeturn0file2
         self.query_resp.schedule_before(self.query_req)
-    # ------------------------------------------------------------------ #
-    #  Elaborate
-    # ------------------------------------------------------------------ #
+
+        # ── Two internal sketches ─────────────────────────────────────────
+        self._cms0 = CountMinSketch(
+            depth=depth,
+            width=width,
+            counter_width=counter_width,
+            input_data_width=input_data_width,
+            hash_params=hash_params,
+        )
+        self._cms1 = CountMinSketch(
+            depth=depth,
+            width=width,
+            counter_width=counter_width,
+            input_data_width=input_data_width,
+            hash_params=hash_params,
+        )
+
+        # ── Local control / status signals ───────────────────────────────
+        self._active_sel = Signal(1, init=0)  # 0 → cms0 active, 1 → cms1 active
+        self._mode = Signal(1, init=0)        # 0 → UPDATE, 1 → QUERY
+
+        # Background-clear book-keeping for the stand-by sketch
+        self._clr_pending = Signal()  # 1 → call *clear()* on stand-by ASAP
+        self._clr_busy = Signal()     # 1 → stand-by is currently sweeping
+        self._clr_timer = Signal(range(self.width + 1))  # progress counter
+
+        # One-cycle latency tracking for the query path (same trick as in CMS)
+        self._resp_valid = Signal()
+
+    # ------------------------------- Elaborate -----------------------------
     def elaborate(self, platform):
         m = TModule()
-        m.submodules += self.cms
+        m.submodules.cms0 = self._cms0
+        m.submodules.cms1 = self._cms1
 
-        # ── Role registers ────────────────────────────────────────────
-        current = Signal(2, init=0)  # 0 … 2
-        last    = Signal(2, init=1)
-        standby = Signal(2, init=2)
-
-        # ── One‑second counter ────────────────────────────────────────
-        tick = Signal(range(self._interval_cycles), init=0)
-
-        # ── Outstanding query tracking (mirrors CountMinSketch) ──────
-        resp_valid = Signal()
-
-        # =============================================================
-        # INSERT  → *current*
-        # =============================================================
-        @def_method(m, self.insert)
+        # ------------------------------------------------------------------
+        # INSERT (only in UPDATE mode)
+        # ------------------------------------------------------------------
+        @def_method(m, self.insert, ready=~self._mode)
         def _(data):
-            with m.Switch(current):
-                with m.Case(0):
-                    self.cms[0].insert(m, data=data)
-                with m.Case(1):
-                    self.cms[1].insert(m, data=data)
-                with m.Case(2):
-                    self.cms[2].insert(m, data=data)
-
-        # =============================================================
-        # QUERY (response) ← *last*
-        # =============================================================
-        @def_method(m, self.query_resp, ready=resp_valid)
-        def _():
-            with m.Switch(last):
-                with m.Case(0):
-                    res = self.cms[0].query_resp(m)
-                with m.Case(1):
-                    res = self.cms[1].query_resp(m)
-                with m.Case(2):
-                    res = self.cms[2].query_resp(m)
-            m.d.sync += resp_valid.eq(0)
-            return {"count": res["count"]}
-
-        # =============================================================
-        # QUERY (request) → *last*
-        # =============================================================
-        @def_method(m, self.query_req, ready=(~resp_valid | self.query_resp.run))
-        def _(data):
-            with m.Switch(last):
-                with m.Case(0):
-                    self.cms[0].query_req(m, data=data)
-                with m.Case(1):
-                    self.cms[1].query_req(m, data=data)
-                with m.Case(2):
-                    self.cms[2].query_req(m, data=data)
-            m.d.sync += resp_valid.eq(1)
-
-        # =============================================================
-        # House‑keeping FSM (runs *every* clock via Transaction)
-        # =============================================================
-        init_done = Signal(init=0)
-
-        with Transaction().body(m):
-            # One‑off: clear the initial *standby* sketch
-            with m.If(~init_done):
-                self.cms[2].clear(m)
-                m.d.sync += init_done.eq(1)
-
-            # Regular operation once initial clear has completed
+            # Route the call to the active sketch only.
+            with m.If(self._active_sel == 0):
+                self._cms0.insert(m, data=data)
             with m.Else():
-                m.d.sync += tick.eq(tick + 1)
+                self._cms1.insert(m, data=data)
 
-                # Rotate roles at the end of the 1‑s window *iff* no query
-                # response is pending. Otherwise postpone by one cycle.
-                with m.If((tick == self._interval_cycles - 1) & ~resp_valid):
-                    # Kick off clearing of the sketch that moves to *standby*
-                    with m.Switch(last):
-                        with m.Case(0):
-                            self.cms[0].clear(m)
-                        with m.Case(1):
-                            self.cms[1].clear(m)
-                        with m.Case(2):
-                            self.cms[2].clear(m)
+        # ------------------------------------------------------------------
+        # QUERY – *response* side (mirrors pattern from CountMinSketch)
+        # ------------------------------------------------------------------
+        @def_method(m, self.query_resp, ready=self._mode & self._resp_valid)
+        def _():
+            count = Signal(self.counter_width)
+            with m.If(self._active_sel == 0):
+                ret = self._cms0.query_resp(m)
+                m.d.av_comb += count.eq(ret["count"])
+            with m.Else():
+                ret = self._cms1.query_resp(m)
+                m.d.av_comb += count.eq(ret["count"])
 
-                    # Rotate the role registers in a single clock edge
-                    m.d.sync += [
-                        tick.eq(0),
-                        current.eq(standby),
-                        last.eq(current),
-                        standby.eq(last),
-                    ]
+            m.d.sync += self._resp_valid.eq(0)
+            return {"count": count}
+
+        # ------------------------------------------------------------------
+        # QUERY – *request* side
+        # ------------------------------------------------------------------
+        @def_method(
+            m,
+            self.query_req,
+            ready=self._mode & (~self._resp_valid | self.query_resp.run),
+        )
+        def _(data):
+            with m.If(self._active_sel == 0):
+                self._cms0.query_req(m, data=data)
+            with m.Else():
+                self._cms1.query_req(m, data=data)
+            m.d.sync += self._resp_valid.eq(1)
+
+        # ------------------------------------------------------------------
+        # CHANGE ROLES – ping-pong the two sketches
+        #   Ready when:
+        #     * we are in UPDATE mode, and
+        #     * the stand-by sketch is *not* in the middle of a clear sweep.
+        # ------------------------------------------------------------------
+        @def_method(
+            m,
+            self.change_roles,
+            ready=(~self._mode) & ~self._clr_busy & ~self._clr_pending,
+        )
+        def _():
+            m.d.sync += [
+                self._active_sel.eq(~self._active_sel),
+                self._clr_pending.eq(1),  # clear the *new* stand-by
+            ]
+
+        # ------------------------------------------------------------------
+        # SET MODE – 0 = UPDATE, 1 = QUERY
+        # ------------------------------------------------------------------
+        @def_method(m, self.set_mode, ready=~self._clr_busy)
+        def _(mode):
+            m.d.sync += self._mode.eq(mode)
+
+        # ------------------------------------------------------------------
+        # AUTOMATIC BACKGROUND CLEAR of the stand-by sketch
+        # ------------------------------------------------------------------
+        with Transaction().body(m):
+            # Fire *clear()* exactly once per role swap
+            with m.If(self._clr_pending & ~self._clr_busy):
+                # Call *clear()* on the current stand-by sketch.
+                with m.If(self._active_sel == 0):  # cms1 is stand-by
+                    self._cms1.clear(m)
+                with m.Else():                      # cms0 is stand-by
+                    self._cms0.clear(m)
+                # Book-keeping
+                m.d.sync += [
+                    self._clr_pending.eq(0),
+                    self._clr_busy.eq(1),
+                    self._clr_timer.eq(0),
+                ]
+
+        # Simple timer – *CountMinSketch.clear()* keeps the row blocked for
+        # *width* cycles, so after that many cycles we know the sweep ended.
+        with m.If(self._clr_busy):
+            m.d.sync += self._clr_timer.eq(self._clr_timer + 1)
+            with m.If(self._clr_timer == self.width - 1):
+                m.d.sync += self._clr_busy.eq(0)
 
         return m

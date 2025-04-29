@@ -1,162 +1,150 @@
-from __future__ import annotations
-
-"""Randomised functional test‑bench for ``RollingCountMinSketch``.
-
-This version **pre‑generates the entire traffic trace and the list of expected
-`query_resp` results *before* the simulator starts**.  That guarantees the
-checker process enters its loop right away (no more empty ``self.expected``
-edge‑case).
-
-The schedule includes random idle stretches to stress the handshake timing
-and reproduces the *resp_valid*‑gated rotation of the three sketches so the
-software model stays cycle‑accurate.
-"""
-
 from random import randint, random, seed
 from collections import deque
 
 from transactron.testing import TestCaseWithSimulator, SimpleTestCircuit
 
-# Local import – adjust if your project layout differs
+# Adjust the import path if your project structure differs
 from mur.count.RollingCountMinSketch import RollingCountMinSketch
 
 
 class TestRollingCountMinSketch(TestCaseWithSimulator):
-    """Cycle‑accurate, fully pre‑scheduled verification of the rolling CMS."""
+    """Randomised functional test‑bench for ``RollingCountMinSketch``.
+
+    Mirrored after *test_countminsketch.py* and *test_counthashtab.py*:
+
+    * Generates a mixed stream of ``insert``, ``query``, ``change_roles`` and
+      ``set_mode`` operations with random idle cycles and back‑pressure.
+    * Maintains a Python reference model of the double‑buffered sketches.
+    * Checks that every ``query_resp`` matches the reference model.
+    """
 
     # ------------------------------------------------------------------
-    #  Test‑vector generation (runs *before* any simulation)
+    #  Stimulus generation
     # ------------------------------------------------------------------
     def setup_method(self):
         seed(42)
 
-        # ── Design parameters ──────────────────────────────────────────
-        self.depth            = 4
-        self.width            = 64
-        self.counter_width    = 32
-        self.data_width       = 32
-        self.interval_cycles  = 32   # defines the “one‑second” window
-        self.total_cycles     = 12_000
+        # ── Design parameters ────────────────────────────────────────
+        self.depth = 4
+        self.width = 64
+        self.counter_width = 64
+        self.data_width = 32
 
-        # ── Universal hash prime (matches RTL) ─────────────────────────
-        _P = 4_294_967_291  # 2**32 − 5
+        # ── Operation trace ──────────────────────────────────────────
+        self.operation_count = 10_000
+        self.ops: list[tuple[str, int | None]] = []  # (op, arg)
+        self.expected = deque()                      # expected query responses
+
+        # ── Reference model -------------------------------------------------
+        P = 4_294_967_291  # 2**32 − 5
+        self.hash_params = [(row + 1, 0) for row in range(self.depth)]
 
         def h(row: int, x: int) -> int:
-            return (((row + 1) * x) % _P) % self.width
+            a, b = self.hash_params[row]
+            return ((a * x + b) % P) % self.width
 
-        # ── Three rolling sketches:  current | last | standby ──────────
-        def new_sketch():
-            return [[0] * self.width for _ in range(self.depth)]
+        # Two sketches: 0 and 1 (ping‑pong)
+        self.model = [
+            [[0] * self.width for _ in range(self.depth)],
+            [[0] * self.width for _ in range(self.depth)],
+        ]
+        self.active = 0  # 0 → sketch0 active, 1 → sketch1 active
+        self.mode = 0    # 0 → UPDATE mode, 1 → QUERY mode
 
-        sketches = [new_sketch(), new_sketch(), new_sketch()]
-        current, last, standby = 0, 1, 2
-
-        # ── Schedules for the driver & checker coroutines ──────────────
-        self.driver_sched  : list[tuple[int, str, int]] = []  # (delay, op, data)
-        self.checker_sched : list[int]                   = []  # delay before read
-        self.expected      : deque[dict[str, int]] = deque()
-
-        delay_drv  = 0  # idle cycles waiting *before* the next driver op
-        delay_chk  = 0  # idle cycles waiting *before* the next checker read
-        outstanding = 0  # queries issued − responses already scheduled
-
-        tick = 0  # 0 … interval_cycles‑1
-
-        for cycle in range(self.total_cycles):
-            # -------------------- DRIVER decision --------------------
-            if random() < 0.7:  # 70 % chance to perform an operation
-                op   = "insert" if random() < 0.6 else "query"
-                data = randint(0, (1 << self.data_width) - 1)
-
-                # Record the event with the idle gap that preceded it
-                self.driver_sched.append((delay_drv, op, data))
-                delay_drv = 0
-
-                if op == "insert":
-                    # Update the *current* sketch
+        for _ in range(self.operation_count):
+            if self.mode == 0:  # UPDATE mode --------------------------------
+                r = random()
+                if r < 0.7:
+                    # INSERT -------------------------------------------------
+                    data = randint(0, (1 << self.data_width) - 1)
+                    self.ops.append(("insert", data))
                     for row in range(self.depth):
-                        sketches[current][row][h(row, data)] += 1
-                else:  # op == "query"
-                    # Estimate from *last* sketch – stored immediately
-                    counts = [sketches[last][row][h(row, data)] for row in range(self.depth)]
-                    self.expected.append({"count": min(counts)})
-                    outstanding += 1
-            else:
-                delay_drv += 1  # one more idle cycle before the next op
-
-            # ------------------- CHECKER decision --------------------
-            if outstanding > 0 and random() < 0.5:  # 50 % chance to read
-                self.checker_sched.append(delay_chk)
-                delay_chk = 0
-                outstanding -= 1
-            else:
-                delay_chk += 1
-
-            # ------------------- Role rotation logic -----------------
-            if tick == self.interval_cycles - 1 and outstanding == 0:
-                # Clear the sketch that moves to *standby*
-                sketches[standby] = new_sketch()
-                # Rotate roles: current → last → standby → current
-                current, last, standby = standby, current, last
-                tick = 0
-            else:
-                tick = (tick + 1) % self.interval_cycles
-
-        # ------------------- Flush outstanding queries --------------
-        # Schedule reads (with one idle cycle spacing) until all answers pulled
-        while outstanding > 0:
-            self.checker_sched.append(delay_chk)
-            delay_chk = 1  # leave ≥1 idle cycle between further reads
-            outstanding -= 1
-
-        # Any residual driver idle time must be appended to *every* op’s
-        # *following* delay, so the trailing gap is irrelevant here.
+                        self.model[self.active][row][h(row, data)] += 1
+                elif r < 0.85:
+                    # CHANGE ROLES ------------------------------------------
+                    self.ops.append(("change_roles", None))
+                    # Swap active / stand‑by
+                    self.active ^= 1
+                    # Clear new stand‑by (old active) immediately in model
+                    standby = 1 - self.active
+                    for row in range(self.depth):
+                        for idx in range(self.width):
+                            self.model[standby][row][idx] = 0
+                else:
+                    # SWITCH TO QUERY MODE ----------------------------------
+                    self.ops.append(("set_mode", 1))
+                    self.mode = 1
+            else:  # QUERY mode ---------------------------------------------
+                if random() < 0.75:
+                    data = randint(0, (1 << self.data_width) - 1)
+                    self.ops.append(("query", data))
+                    est = min(
+                        self.model[self.active][row][h(row, data)]
+                        for row in range(self.depth)
+                    )
+                    self.expected.append({"count": est})
+                else:
+                    # BACK TO UPDATE MODE -----------------------------------
+                    self.ops.append(("set_mode", 0))
+                    self.mode = 0
 
     # ------------------------------------------------------------------
-    #  Driver coroutine – replays the *pre‑computed* stimulus  ----------
+    #  Driver process
     # ------------------------------------------------------------------
     async def driver_process(self, sim):
-        for delay, op, data in self.driver_sched:
-            for _ in range(delay):
+        """Feeds operations into the DUT with random idle cycles."""
+        for op, arg in self.ops:
+            # Random idle cycles to shake loose corner‑cases
+            while random() >= 0.7:
                 await sim.tick()
-            print(f"driver delay {delay} op {op} data {data}")
+
             if op == "insert":
-                await self.dut.insert.call(sim, {"data": data})
-            else:  # "query"
-                print(f"query_req: {data}")
-                await self.dut.query_req.call(sim, {"data": data})
-            print(f"query_reqk: {data}")
-            # Advance one cycle *after* every transaction, mirroring the
-            # generation model and guaranteeing back‑to‑back requests can’t
-            # happen in a single clock.
-            await sim.tick()
+                print(f"Before insert.call() with data={arg}")
+                await self.dut.insert.call(sim, {"data": arg})
+                print(f"After insert.call() with data={arg}")
+            elif op == "query":
+                print(f"Before query_req.call() with data={arg}")
+                await self.dut.query_req.call(sim, {"data": arg})
+                print(f"After query_req.call() with data={arg}")
+            elif op == "change_roles":
+                print("Before change_roles.call()")
+                await self.dut.change_roles.call(sim, {})
+                print("After change_roles.call()")
+            elif op == "set_mode":
+                print(f"Before set_mode.call() with mode={arg}")
+                await self.dut.set_mode.call(sim, {"mode": arg})
+                print(f"After set_mode.call() with mode={arg}")
+            else:
+                raise ValueError(f"Unknown operation {op}")
+
+            # Ensure one cycle before a possible query_resp
+            if op == "query":
+                await sim.tick()
 
     # ------------------------------------------------------------------
-    #  Checker coroutine – pulls answers on the fixed schedule ----------
+    #  Checker process
     # ------------------------------------------------------------------
     async def checker_process(self, sim):
-        for delay in self.checker_sched:
-           
-            for _ in range(delay):
+        """Checks that DUT responses match the reference model."""
+        while self.expected:
+            # Random back‑pressure before reading
+            while random() >= 0.5:
                 await sim.tick()
-            print(f"checker delay {delay}")
+            print("Before query_resp.call()")
             resp = await self.dut.query_resp.call(sim)
+            print(f"After query_resp.call(), received: {resp}")
             assert resp == self.expected.popleft()
-            print(f"query_resp: {resp['count']}")
-            # One extra tick keeps the handshake phasing identical to the
-            # generation‑time model.
-            await sim.tick()
 
     # ------------------------------------------------------------------
-    #  Top‑level simulation wrapper ------------------------------------
+    #  Top‑level test
     # ------------------------------------------------------------------
-    def test_pre_scheduled(self):
+    def test_randomized(self):
         core = RollingCountMinSketch(
-            depth             = self.depth,
-            width             = self.width,
-            counter_width     = self.counter_width,
-            input_data_width  = self.data_width,
-            interval_cycles   = self.interval_cycles,
+            depth=self.depth,
+            width=self.width,
+            counter_width=self.counter_width,
+            input_data_width=self.data_width,
+            hash_params=self.hash_params,
         )
         self.dut = SimpleTestCircuit(core)
 
