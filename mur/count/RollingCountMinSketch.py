@@ -59,14 +59,19 @@ class RollingCountMinSketch(Elaboratable):
 
         # ── Public Transactron interface ──────────────────────────────────
         self.insert = Method(i=[("data", self.input_data_width)])
-        self.query_req = Method(i=[("data", self.input_data_width)])
-        self.query_resp = Method(o=[("count", self.counter_width)])
+        
+        # Separate query interfaces for the two internal sketches
+        self.query_req0  = Method(i=[("data", self.input_data_width)])
+        self.query_resp0 = Method(o=[("count", self.counter_width)])
+        self.query_req1  = Method(i=[("data", self.input_data_width)])
+        self.query_resp1 = Method(o=[("count", self.counter_width)])
+
         self.change_roles = Method()  # no arguments
         self.set_mode = Method(i=[("mode", 1)])  # 0 = UPDATE, 1 = QUERY
 
-        # *query_resp* must win arbitration over *query_req* just like in the
-        # underlying *CountMinSketch* implementation. citeturn0file2
-        self.query_resp.schedule_before(self.query_req)
+        # Ensure one‑cycle latency on each pair of query methods
+        self.query_resp0.schedule_before(self.query_req0)
+        self.query_resp1.schedule_before(self.query_req1)
 
         # ── Two internal sketches ─────────────────────────────────────────
         self._cms0 = CountMinSketch(
@@ -96,6 +101,11 @@ class RollingCountMinSketch(Elaboratable):
         # One-cycle latency tracking for the query path (same trick as in CMS)
         self._resp_valid = Signal()
 
+        # One‑cycle latency tracking for each query interface
+        self._resp_valid0 = Signal()
+        self._resp_valid1 = Signal()
+
+
     # ------------------------------- Elaborate -----------------------------
     def elaborate(self, platform):
         m = TModule()
@@ -114,35 +124,58 @@ class RollingCountMinSketch(Elaboratable):
                 self._cms1.insert(m, data=data)
 
         # ------------------------------------------------------------------
-        # QUERY – *response* side (mirrors pattern from CountMinSketch)
-        # ------------------------------------------------------------------
-        @def_method(m, self.query_resp, ready=self._mode & self._resp_valid)
-        def _():
-            count = Signal(self.counter_width)
-            with m.If(self._active_sel == 0):
-                ret = self._cms0.query_resp(m)
-                m.d.av_comb += count.eq(ret["count"])
-            with m.Else():
-                ret = self._cms1.query_resp(m)
-                m.d.av_comb += count.eq(ret["count"])
-
-            m.d.sync += self._resp_valid.eq(0)
-            return {"count": count}
-
-        # ------------------------------------------------------------------
-        # QUERY – *request* side
+        # QUERY – cms0  (response side)
         # ------------------------------------------------------------------
         @def_method(
             m,
-            self.query_req,
-            ready=self._mode & (~self._resp_valid | self.query_resp.run),
+            self.query_resp0,
+            ready=self._mode & self._resp_valid0 & (self._active_sel == 0)
+        )
+        def _():
+            ret = self._cms0.query_resp(m)
+            m.d.sync += self._resp_valid0.eq(0)
+            return {"count": ret["count"]}
+
+        # ------------------------------------------------------------------
+        # QUERY – cms0  (request side)
+        # ------------------------------------------------------------------
+        @def_method(
+            m,
+            self.query_req0,
+            ready=self._mode
+                  & (self._active_sel == 0)
+                  & (~self._resp_valid0 | self.query_resp0.run)
         )
         def _(data):
-            with m.If(self._active_sel == 0):
-                self._cms0.query_req(m, data=data)
-            with m.Else():
-                self._cms1.query_req(m, data=data)
-            m.d.sync += self._resp_valid.eq(1)
+            self._cms0.query_req(m, data=data)
+            m.d.sync += self._resp_valid0.eq(1)
+
+        # ------------------------------------------------------------------
+        # QUERY – cms1  (response side)
+        # ------------------------------------------------------------------
+        @def_method(
+            m,
+            self.query_resp1,
+            ready=self._mode & self._resp_valid1 & (self._active_sel == 1)
+        )
+        def _():
+            ret = self._cms1.query_resp(m)
+            m.d.sync += self._resp_valid1.eq(0)
+            return {"count": ret["count"]}
+
+        # ------------------------------------------------------------------
+        # QUERY – cms1  (request side)
+        # ------------------------------------------------------------------
+        @def_method(
+            m,
+            self.query_req1,
+            ready=self._mode
+                  & (self._active_sel == 1)
+                  & (~self._resp_valid1 | self.query_resp1.run)
+        )
+        def _(data):
+            self._cms1.query_req(m, data=data)
+            m.d.sync += self._resp_valid1.eq(1)
 
         # ------------------------------------------------------------------
         # CHANGE ROLES – ping-pong the two sketches
