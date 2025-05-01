@@ -1,16 +1,38 @@
 {
     "version": "0.2.0",
     "configurations": [
-        {
-            "name": "Debug pytest: test_rollingcountminsketch.py",
-            "type": "debugpy",
-            "request": "launch",
-            "module": "pytest",
-            "args": [
-                "test/test_rollingcountminsketch.py"
-            ],
-            "console": "integratedTerminal",
-            "justMyCode": false
-        }
+      {
+        // Shows up in the debug-config picker
+        "name": "Debug this test file",
+  
+        // MUST be "python"; VS Code’s Python extension
+        // automatically uses debugpy behind the scenes.
+        "type": "debugpy",
+        "request": "launch",
+  
+        // Run pytest as a module so it’s import-safe
+        "module": "pytest",
+  
+        // Path(s) to the test file or folder you want to run
+        "args": ["test/test_rollingcountminsketch.py"],
+  
+        // Let stdout/stderr flow into the terminal
+        "console": "integratedTerminal",
+  
+        // Step into library code when you need to
+        "justMyCode": false,
+  
+        // Optional but handy:
+        //  – gives you the little green bug icons in
+        //    the Test Explorer and inline above each test
+        "purpose": ["debug-test"],
+  
+        // If your project layout is non-standard, point CWD
+        "cwd": "${workspaceFolder}",
+  
+        // If your tests spawn child processes
+        // "subProcess": true
+      }
     ]
-}
+  }
+  

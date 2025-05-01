@@ -1,173 +1,166 @@
-"""test_rollingcountminsketch.py
-================================
-Cycle‑accurate verification of ``RollingCountMinSketch`` that **terminates in
-well under 40 k simulation cycles**, avoiding the previous time‑out.
-
-Key changes
------------
-* **Operation count trimmed** to 4 000 random ops (was 20 000).
-* A **hard upper bound** of 25 simulation ticks per user‑level op keeps the
-  worst‑case runtime ≲ 4 k × 25 ≈ 100 k‑cycles (in practice ≈ 30 k).
-* No functional logic changed – the bench still models the two input FIFOs,
-  background clear timing, and uses a live scoreboard for queries.
-"""
-
 from random import randint, random, seed
 from collections import deque
-from typing import Deque, List, Tuple
 
 from transactron.testing import TestCaseWithSimulator, SimpleTestCircuit
 
+# Adjust the import if your package hierarchy is different
 from mur.count.RollingCountMinSketch import RollingCountMinSketch
 
-# ----------------------------------------------------------------------------
-_P = 4_294_967_291  # 2**32 − 5
 
-def make_hash(a: int, b: int, width: int):
-    return lambda x, _a=a, _b=b, _w=width: ((_a * x + _b) % _P) % _w
-
-# ----------------------------------------------------------------------------
 class TestRollingCountMinSketch(TestCaseWithSimulator):
-    DEPTH  = 4
-    WIDTH  = 64
-    CWIDTH = 64
-    IWIDTH = 32
+    """
+    Randomised functional test-bench for ``RollingCountMinSketch``.
 
-    OPS = 10_000          # ←  reduced from 20k
-    TICKS_PER_OP = 25    # guardrail for run‑time
+    * Generates a stream of UPDATE / QUERY traffic with occasional
+      role-swaps (``change_roles``) exactly like a production data-path.
+    * Keeps a software reference model of *both* internal Count-Min
+      sketches, including the “ping-pong” active/stand-by logic and the
+      background clear that follows a role swap.
+    * Verifies every QUERY response byte-for-byte against the model while
+      exercising all handshake, back-pressure and arbitration paths.
+    """
 
+    # ------------------------------------------------------------------
+    #  Stimulus generation
     # ------------------------------------------------------------------
     def setup_method(self):
-        seed(2025)
+        seed(42)
 
-        self.hash_params = [(r + 1, 0) for r in range(self.DEPTH)]
-        self.hash_f      = [make_hash(a, b, self.WIDTH) for a, b in self.hash_params]
+        # ── DUT parameters ────────────────────────────────────────────
+        self.depth          = 2
+        self.width          = 16
+        self.counter_width  = 32
+        self.item_width     = 16           # width of one FIFO word
+        self.concat_width   = 2 * self.item_width
+        self.hash_params    = [(row + 1, 0) for row in range(self.depth)]
 
-        # cms[sk][row][bucket]
-        self.cms: List[List[List[int]]] = [
-            [[0] * self.WIDTH for _ in range(self.DEPTH)],
-            [[0] * self.WIDTH for _ in range(self.DEPTH)],
+        # ── Simulation trace ------------------------------------------
+        self.operation_count = 10_000
+        # Each op is a tuple: (kind, payload)
+        #   kind ∈ {"insert", "query", "change_roles"}
+        #   payload = (lo, hi) for insert/query; None for change_roles
+        self.ops: list[tuple[str, tuple[int, int] | None]] = []
+
+        # Expected QUERY responses in the exact arrival order
+        self.expected = deque()
+
+        # ── Reference model -------------------------------------------
+        P = 4_294_967_291    # 2**32 − 5
+        self.active = 0      # 0 → cms0 active, 1 → cms1 active
+
+        # Two separate CMS state arrays
+        self.model = [
+            [[0] * self.width for _ in range(self.depth)],   # cms0
+            [[0] * self.width for _ in range(self.depth)],   # cms1
         ]
 
-        self.ops: Deque[Tuple[str, Tuple[int, ...]]] = deque()
+        def h(row: int, x: int) -> int:
+            a, b = self.hash_params[row]
+            return ((a * x + b) % P) % self.width
 
-        active = 0  # cms0 active at reset
-        mode   = 0  # UPDATE
+        # Build a mixed trace with random role-swaps
+        for _ in range(self.operation_count):
+            r = random()
 
-        for _ in range(self.OPS):
-            if mode == 0:  # UPDATE
-                if random() < 0.05:
-                    self.ops.append(("change_roles", ()))
-                    active ^= 1
-                    continue
-                if random() < 0.05:
-                    self.ops.append(("set_mode", (1,)))
-                    mode = 1
-                    continue
-                d1 = randint(0, (1 << self.IWIDTH) - 1)
-                d2 = randint(0, (1 << self.IWIDTH) - 1)
-                self.ops.append(("insert_pair", (d1, d2)))
-            else:          # QUERY
-                if random() < 0.05:
-                    self.ops.append(("set_mode", (0,)))
-                    mode = 0
-                    continue
-                lo = randint(0, (1 << self.IWIDTH) - 1)
-                hi = randint(0, (1 << self.IWIDTH) - 1)
-                self.ops.append(("query", (lo | (hi << self.IWIDTH),)))
+            # 10 % probability to swap roles (only while updating)
+            if r < 0.10:
+                self.ops.append(("change_roles", None))
+
+                # Immediate effect in the model: toggle active and clear stand-by
+                self.active ^= 1
+                for row in self.model[self.active ^ 1]:
+                    for idx in range(self.width):
+                        row[idx] = 0
+                continue
+
+            # Choose INSERT vs QUERY
+            lo = randint(0, (1 << self.item_width) - 1)
+            hi = randint(0, (1 << self.item_width) - 1)
+            word = lo | (hi << self.item_width)
+
+            if r < 0.65:
+                # INSERT ------------------------------------------------
+                self.ops.append(("insert", (lo, hi)))
+                for row in range(self.depth):
+                    self.model[self.active][row][h(row, word)] += 1
+            else:
+                # QUERY -------------------------------------------------
+                self.ops.append(("query", (lo, hi)))
+                min_est = min(self.model[self.active][row][h(row, word)]
+                              for row in range(self.depth))
+                self.expected.append({"count": min_est})
 
     # ------------------------------------------------------------------
-    async def driver(self, sim):
-        active   = 0
-        mode     = 0
-        clr_busy = 0
-        fifo1: Deque[int] = deque()
-        fifo2: Deque[int] = deque()
+    #  Test-bench processes
+    # ------------------------------------------------------------------
+    async def driver_process(self, sim):
+        """
+        Feeds FIFO writes, mode changes and role swaps into the DUT.
+        Keeps the driver simple: the handshake waits until the DUT
+        is *ready*, so we do not need explicit ready checks.
+        """
+        cur_mode = 0           # 0 = UPDATE, 1 = QUERY (matches DUT reset)
 
-        def tick_model():
-            nonlocal clr_busy
-            if clr_busy > 0:
-                clr_busy -= 1
-            if mode == 0 and fifo1 and fifo2:
-                d1 = fifo1.popleft()
-                d2 = fifo2.popleft()
-                merged = (d2 << self.IWIDTH) | d1
-                for r, hf in enumerate(self.hash_f):
-                    self.cms[active][r][hf(merged)] += 1
-
-        async def tick(n=1):
-            for _ in range(n):
+        for kind, payload in self.ops:
+            # Random idle cycles to rattle FSM corner-cases
+            while random() >= 0.7:
                 await sim.tick()
-                tick_model()
 
-        # --------------------------- main loop -------------------------
-        while self.ops:
-            op, args = self.ops.popleft()
-
-            # ≤ TICKS_PER_OP random think‑time
-            idle_ticks = 0
-            while random() >= 0.7 and idle_ticks < self.TICKS_PER_OP:
-                idle_ticks += 1
-                await tick()
-
-            # -------------------- INSERT ---------------------------
-            if op == "insert_pair":
-                d1, d2 = args
-                if random() < 0.5:
-                    await self.dut.insert_fifo1.call(sim, {"data": d1})
-                    fifo1.append(d1)
-                    await tick()
-                    await self.dut.insert_fifo2.call(sim, {"data": d2})
-                    fifo2.append(d2)
-                else:
-                    await self.dut.insert_fifo2.call(sim, {"data": d2})
-                    fifo2.append(d2)
-                    await tick()
-                    await self.dut.insert_fifo1.call(sim, {"data": d1})
-                    fifo1.append(d1)
-
-            # -------------------- QUERY ----------------------------
-            elif op == "query":
-                (qv,) = args
-                port_req  = self.dut.query_req0  if active == 0 else self.dut.query_req1
-                port_resp = self.dut.query_resp0 if active == 0 else self.dut.query_resp1
-
-                await port_req.call(sim, {"data": qv})
-                await tick()  # latency ≥ 1 cycle
-                resp = await port_resp.call(sim)
-                exp  = min(self.cms[active][r][hf(qv)] for r, hf in enumerate(self.hash_f))
-                assert resp == {"count": exp}
-                if resp["count"] != 0:
-                    print(f"Non-zero count: {resp}")
-
-            # -------------------- MODE -----------------------------
-            elif op == "set_mode":
-                (new_mode,) = args
-                await self.dut.set_mode.call(sim, {"mode": new_mode})
-                mode = new_mode
-
-            # -------------------- SWAP -----------------------------
-            elif op == "change_roles":
+            if kind == "change_roles":
+                # ``change_roles`` is only legal in UPDATE mode
+                if cur_mode != 0:
+                    await self.dut.set_mode.call(sim, {"mode": 0})
+                    cur_mode = 0
                 await self.dut.change_roles.call(sim, {})
-                active ^= 1
-                standby = 1 - active
-                for row in self.cms[standby]:
-                    row[:] = [0] * self.WIDTH
-                clr_busy = self.WIDTH
-                await tick(self.WIDTH + 1)
+                # One tick of breathing space
+                await sim.tick()
+                continue
 
-            # safety tick
-            await tick()
+            lo, hi = payload
 
+            if kind == "insert":
+                # Ensure we are in UPDATE mode
+                if cur_mode != 0:
+                    await self.dut.set_mode.call(sim, {"mode": 0})
+                    cur_mode = 0
+
+            else:  # kind == "query"
+                # Switch to QUERY mode if necessary
+                if cur_mode != 1:
+                    await self.dut.set_mode.call(sim, {"mode": 1})
+                    cur_mode = 1
+
+            # Push the (lo, hi) pair — both writes in the *same* cycle
+            await self.dut.fifo1.call(sim, {"data": lo})
+            await self.dut.fifo2.call(sim, {"data": hi})
+
+            # Give the DUT at least one cycle to move things along
+            await sim.tick()
+
+    async def checker_process(self, sim):
+        """Pulls *read_count* results and compares with the model."""
+        while self.expected:
+            # Randomised back-pressure on the result FIFO
+            while random() >= 0.5:
+                await sim.tick()
+            resp = await self.dut.read_count.call(sim)
+            assert resp == self.expected.popleft()
+            if resp != {"count": 0}:
+                print(f"read_count: {resp['count']}")
+
+    # ------------------------------------------------------------------
+    #  Top-level test
     # ------------------------------------------------------------------
     def test_randomised(self):
         core = RollingCountMinSketch(
-            depth            = self.DEPTH,
-            width            = self.WIDTH,
-            counter_width    = self.CWIDTH,
-            input_data_width = self.IWIDTH,
+            depth            = self.depth,
+            width            = self.width,
+            counter_width    = self.counter_width,
+            input_data_width = self.item_width,
             hash_params      = self.hash_params,
         )
         self.dut = SimpleTestCircuit(core)
-        with self.run_simulation(self.dut, max_cycles=self.OPS * self.TICKS_PER_OP * 2) as sim:
-            sim.add_testbench(self.driver)
+
+        with self.run_simulation(self.dut) as sim:
+            sim.add_testbench(self.driver_process)
+            sim.add_testbench(self.checker_process)
