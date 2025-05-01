@@ -33,13 +33,16 @@ class TestRollingCountMinSketch(TestCaseWithSimulator):
         self.item_width     = 16           # width of one FIFO word
         self.concat_width   = 2 * self.item_width
         self.hash_params    = [(row + 1, 0) for row in range(self.depth)]
+        #declare python's queue 
+        self.fifo1 = deque()
+        self.fifo2 = deque()
 
         # ── Simulation trace ------------------------------------------
         self.operation_count = 10_000
         # Each op is a tuple: (kind, payload)
         #   kind ∈ {"insert", "query", "change_roles"}
         #   payload = (lo, hi) for insert/query; None for change_roles
-        self.ops: list[tuple[str, tuple[int, int] | None]] = []
+        self.ops: list[tuple[str, int | None]] = []
 
         # Expected QUERY responses in the exact arrival order
         self.expected = deque()
@@ -48,11 +51,8 @@ class TestRollingCountMinSketch(TestCaseWithSimulator):
         P = 4_294_967_291    # 2**32 − 5
         self.active = 0      # 0 → cms0 active, 1 → cms1 active
 
-        # Two separate CMS state arrays
-        self.model = [
-            [[0] * self.width for _ in range(self.depth)],   # cms0
-            [[0] * self.width for _ in range(self.depth)],   # cms1
-        ]
+        # Single CMS state array (removing the first dimension)
+        self.model = [[0] * self.width for _ in range(self.depth)]
 
         def h(row: int, x: int) -> int:
             a, b = self.hash_params[row]
@@ -63,32 +63,47 @@ class TestRollingCountMinSketch(TestCaseWithSimulator):
             r = random()
 
             # 10 % probability to swap roles (only while updating)
-            if r < 0.10:
+            if r < 0.01:
                 self.ops.append(("change_roles", None))
 
-                # Immediate effect in the model: toggle active and clear stand-by
+                # Immediate effect in the model: toggle active and clear model
                 self.active ^= 1
-                for row in self.model[self.active ^ 1]:
+                for row in self.model:
                     for idx in range(self.width):
                         row[idx] = 0
                 continue
 
             # Choose INSERT vs QUERY
-            lo = randint(0, (1 << self.item_width) - 1)
-            hi = randint(0, (1 << self.item_width) - 1)
-            word = lo | (hi << self.item_width)
+            in_value = randint(0, (1 << self.item_width) - 1)
 
-            if r < 0.65:
+            if r < 0.75:
                 # INSERT ------------------------------------------------
-                self.ops.append(("insert", (lo, hi)))
-                for row in range(self.depth):
-                    self.model[self.active][row][h(row, word)] += 1
+                if len(self.fifo2) == 4 or (random() < 0.50 and len(self.fifo1) < 4):
+                    self.fifo1.append(in_value)
+                    self.ops.append(("insert1", in_value))
+                else:
+                    self.fifo2.append(in_value)
+                    self.ops.append(("insert2", in_value))
+                if len(self.fifo1) and len(self.fifo2):
+                    lo = self.fifo1.popleft()
+                    hi = self.fifo2.popleft()
+                    word = (hi << self.item_width) | lo
+                    for row in range(self.depth):
+                        self.model[row][h(row, word)] += 1
             else:
                 # QUERY -------------------------------------------------
-                self.ops.append(("query", (lo, hi)))
-                min_est = min(self.model[self.active][row][h(row, word)]
-                              for row in range(self.depth))
-                self.expected.append({"count": min_est})
+                if len(self.fifo2) == 4 or (random() < 0.50 and len(self.fifo1) < 4):
+                    self.fifo1.append(in_value)
+                    self.ops.append(("query1", in_value))
+                else:
+                    self.fifo2.append(in_value)
+                    self.ops.append(("query2", in_value))
+                if len(self.fifo1) and len(self.fifo2):
+                    lo = self.fifo1.popleft()
+                    hi = self.fifo2.popleft()
+                    word = (hi << self.item_width) | lo
+                    min_est = min(self.model[row][h(row, word)]for row in range(self.depth))
+                    self.expected.append({"count": min_est})
 
     # ------------------------------------------------------------------
     #  Test-bench processes
@@ -116,9 +131,7 @@ class TestRollingCountMinSketch(TestCaseWithSimulator):
                 await sim.tick()
                 continue
 
-            lo, hi = payload
-
-            if kind == "insert":
+            if kind == "insert1" or kind == "insert2":
                 # Ensure we are in UPDATE mode
                 if cur_mode != 0:
                     await self.dut.set_mode.call(sim, {"mode": 0})
@@ -129,11 +142,17 @@ class TestRollingCountMinSketch(TestCaseWithSimulator):
                 if cur_mode != 1:
                     await self.dut.set_mode.call(sim, {"mode": 1})
                     cur_mode = 1
-
-            # Push the (lo, hi) pair — both writes in the *same* cycle
-            await self.dut.fifo1.call(sim, {"data": lo})
-            await self.dut.fifo2.call(sim, {"data": hi})
-
+            
+            if kind == "insert1":
+                await self.dut.fifo1.call(sim, {"data": payload})
+            elif kind == "insert2":
+                await self.dut.fifo2.call(sim, {"data": payload})
+            elif kind == "query1":
+                await self.dut.fifo1.call(sim, {"data": payload})
+            elif kind == "query2":
+                await self.dut.fifo2.call(sim, {"data": payload})
+            else:
+                raise ValueError(f"Unknown operation: {kind}")
             # Give the DUT at least one cycle to move things along
             await sim.tick()
 
