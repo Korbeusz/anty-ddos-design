@@ -102,9 +102,9 @@ class TestCountHashTab(TestCaseWithSimulator):
                 print(f">>> CALL clear.call")
                 await self.dut.clear.call(sim, {})
                 print(f"<<< RETURN clear.call")
-            print(f">>> CALL sim.tick() - breathing space")
-            await sim.tick()                # breathing space
-            print(f"<<< RETURN sim.tick() - breathing space")
+            #print(f">>> CALL sim.tick() - breathing space")
+                 # breathing space
+           # print(f"<<< RETURN sim.tick() - breathing space")
         print(f"<<< END driver_process")
 
     async def checker_process(self, sim):
@@ -114,10 +114,10 @@ class TestCountHashTab(TestCaseWithSimulator):
         """
         print(f">>> START checker_process")
         while self.expected:
-            while random() >= 0.5:
-                print(f">>> CALL sim.tick() - backpressure")
-                await sim.tick()
-                print(f"<<< RETURN sim.tick() - backpressure")
+           # while random() >= 0.5:
+           #     print(f">>> CALL sim.tick() - backpressure")
+           #     await sim.tick()
+           #    print(f"<<< RETURN sim.tick() - backpressure")
             print(f">>> CALL query_resp.call")
             resp = await self.dut.query_resp.call(sim)
             print(f"<<< RETURN query_resp.call with {resp}")

@@ -121,7 +121,7 @@ class CountMinSketch(Elaboratable):
                 row.insert(m, data=data)  # broadcast
         
           # ---------------------- QUERY — response phase ----------------
-        @def_method(m, self.query_resp, ready=resp_valid & ~clr_running)
+        @def_method(m, self.query_resp, ready= ~clr_running)
         def _():
             # Collect the per‑row counters *in the same cycle*, compute the
             # minimum completely combinatorially, and clear the *resp_valid*
@@ -132,18 +132,15 @@ class CountMinSketch(Elaboratable):
             expr = counts[0]
             for cnt in counts[1:]:
                 expr = Mux(cnt < expr, cnt, expr)
-
-            m.d.sync += resp_valid.eq(0)
             return {"count": expr}
 
         # ---------------------- QUERY — request phase -----------------
         @def_method(m, self.query_req,
-                    ready=(~resp_valid | self.query_resp.run) & ~clr_running)
+                    ready=~clr_running)
         def _(data):
             # Broadcast the request to every row and set *resp_valid*.
             for row in self.rows:
                 row.query_req(m, data=data)
-            m.d.sync += resp_valid.eq(1)
 
       
 

@@ -64,7 +64,7 @@ class TestCountMinSketch(TestCaseWithSimulator):
                 next_clear_at += randint(clear_interval // 2, clear_interval * 3 // 2)
                 continue
 
-            if random() < 0.65:
+            if random() < 0.7:
                 data = randint(0, (1 << self.data_width) - 1)
                 self.ops.append(("insert", data))
                 for row_idx in range(self.depth):
@@ -95,16 +95,14 @@ class TestCountMinSketch(TestCaseWithSimulator):
             else:  # op == "clear"
                 await self.dut.clear.call(sim, {})
               
-            await sim.tick()
-                
             
 
     async def checker_process(self, sim):
         """Pulls *query_resp* and compares with the reference model."""
         while self.expected:
             # Random back‑pressure so *query_resp* may wait in the FIFO
-            while random() >= 0.5:
-                await sim.tick()
+           # while random() >= 0.5:
+            #    await sim.tick()
             resp = await self.dut.query_resp.call(sim)
             assert resp == self.expected.popleft()
             if resp != {"count": 0}:

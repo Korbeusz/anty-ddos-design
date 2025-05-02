@@ -66,12 +66,12 @@ class RollingCountMinSketch(Elaboratable):
         self.fifo2 = self._fifo2.write
         # Result FIFO ---------------------------------------------------
         res_layout  = StructLayout({"count": self.counter_width})
-        self._res_fifo = BasicFifo(res_layout, 8)
+        self._res_fifo = BasicFifo(res_layout, 32)
         self.read_count = self._res_fifo.read
         # Control / status regs ----------------------------------------
         self._active_sel   = Signal(1, init=0)  # 0 → cms0 active, 1 → cms1
         self._mode         = Signal(1, init=0)  # 0 → UPDATE, 1 → QUERY
-        self._resp_pending = Signal()           # waiting for query_resp
+        self._resp_pending = Signal(5, init=0)           # waiting for query_resp
 
         # Background-clear bookkeeping
         self._clr_pending  = Signal()
@@ -116,36 +116,36 @@ class RollingCountMinSketch(Elaboratable):
         # -------------------------------------------------------------- #
         with Transaction(name="QryReq_cms0").body(
             m,
-            request=self._mode & (self._active_sel == 0) & ~self._resp_pending,
+            request=self._mode & (self._active_sel == 0),
         ):
             self._cms0.query_req(m, data=self._pop_pair(m))
-            m.d.sync += self._resp_pending.eq(1)
+            m.d.sync += self._resp_pending.eq(self._resp_pending + 1)
 
         with Transaction(name="QryReq_cms1").body(
             m,
-            request=self._mode & (self._active_sel == 1) & ~self._resp_pending,
+            request=self._mode & (self._active_sel == 1) ,
         ):
             self._cms1.query_req(m, data=self._pop_pair(m))
-            m.d.sync += self._resp_pending.eq(1)
+            m.d.sync += self._resp_pending.eq(self._resp_pending + 1)
 
         # -------------------------------------------------------------- #
         #  QUERY responses → result FIFO                                 #
         # -------------------------------------------------------------- #
         with Transaction(name="Resp_cms0").body(
             m,
-            request=self._resp_pending & (self._active_sel == 0),
+            request=(self._active_sel == 0),
         ):
             resp = self._cms0.query_resp(m)
             self._res_fifo.write(m, count=resp["count"])
-            m.d.sync += self._resp_pending.eq(0)
+            m.d.sync += self._resp_pending.eq(self._resp_pending - 1)
 
         with Transaction(name="Resp_cms1").body(
             m,
-            request=self._resp_pending & (self._active_sel == 1),
+            request= (self._active_sel == 1),
         ):
             resp = self._cms1.query_resp(m)
             self._res_fifo.write(m, count=resp["count"])
-            m.d.sync += self._resp_pending.eq(0)
+            m.d.sync += self._resp_pending.eq(self._resp_pending - 1)
 
         # -------------------------------------------------------------- #
         #  change_roles (allowed only in UPDATE)                         #
@@ -153,7 +153,7 @@ class RollingCountMinSketch(Elaboratable):
         @def_method(
             m,
             self.change_roles,
-            ready=(~self._mode) & ~self._clr_busy & ~self._clr_pending,
+            ready=(~self._mode) & ~self._clr_busy & ~self._clr_pending , 
         )
         def _():
             m.d.sync += [
@@ -164,7 +164,7 @@ class RollingCountMinSketch(Elaboratable):
         # -------------------------------------------------------------- #
         #  set_mode                                                      #
         # -------------------------------------------------------------- #
-        @def_method(m, self.set_mode, ready=(~self._clr_busy & ~(self._fifo1.read.ready & self._fifo2.read.ready )))
+        @def_method(m, self.set_mode, ready=(~self._clr_busy & ~self._clr_pending & ~(self._fifo1.read.ready & self._fifo2.read.ready)& (self._resp_pending == 0)))
         def _(mode):
             m.d.sync += self._mode.eq(mode)
 

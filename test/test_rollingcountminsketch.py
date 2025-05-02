@@ -38,7 +38,7 @@ class TestRollingCountMinSketch(TestCaseWithSimulator):
         self.fifo2 = deque()
 
         # ── Simulation trace ------------------------------------------
-        self.operation_count = 10_000
+        self.operation_count = 15_000
         # Each op is a tuple: (kind, payload)
         #   kind ∈ {"insert", "query", "change_roles"}
         #   payload = (lo, hi) for insert/query; None for change_roles
@@ -134,9 +134,9 @@ class TestRollingCountMinSketch(TestCaseWithSimulator):
                 await self.dut.change_roles.call(sim, {})
                 print(f"[DRIVER] change_roles completed")
                 # One tick of breathing space
-                print(f"[DRIVER] Adding breathing space tick")
-                await sim.tick()
-                print(f"[DRIVER] Breathing space tick complete")
+                #print(f"[DRIVER] Adding breathing space tick")
+                #await sim.tick()
+                #print(f"[DRIVER] Breathing space tick complete")
                 continue
 
             if kind == "insert1" or kind == "insert2":
@@ -174,9 +174,9 @@ class TestRollingCountMinSketch(TestCaseWithSimulator):
             else:
                 raise ValueError(f"Unknown operation: {kind}")
             # Give the DUT at least one cycle to move things along
-            print(f"[DRIVER] Adding cycle for operation {kind}")
-            await sim.tick()
-            print(f"[DRIVER] Cycle for operation {kind} complete")
+            #print(f"[DRIVER] Adding cycle for operation {kind}")
+            #await sim.tick()
+            #print(f"[DRIVER] Cycle for operation {kind} complete")
 
     async def checker_process(self, sim):
         """Pulls *read_count* results and compares with the model."""
