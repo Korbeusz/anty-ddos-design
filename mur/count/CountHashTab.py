@@ -117,7 +117,7 @@ class CountHashTab(Elaboratable):
             ]
 
         # -------------------- Transactron bodies ---------------------
-        @def_method(m, self.insert, ready=(~ins_pending & ~clr_running))
+        @def_method(m, self.insert, ready=(~clr_running))
         def _(data):
             addr = self._hash_index(m, data)
             m.d.comb += [

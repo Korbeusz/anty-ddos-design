@@ -31,7 +31,7 @@ class TestCountMinSketch(TestCaseWithSimulator):
         self.data_width = 32
 
         # ── Simulation stimulus ────────────────────────────────────────
-        self.operation_count = 10_000
+        self.operation_count = 15_000
         self.ops: list[tuple[str, int | None]] = []  # ("insert"|"query"|"clear", data)
         self.expected = deque()                      # expected query responses
 

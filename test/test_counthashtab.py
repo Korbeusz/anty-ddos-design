@@ -31,7 +31,7 @@ class TestCountHashTab(TestCaseWithSimulator):
         self.data_width    = 32
 
         # ── Random operation trace ------------------------------------
-        self.operation_count = 10_000
+        self.operation_count = 15_000
         #               kind          payload
         #   ops[i]  = ("insert"|"query"|"clear",  data:int | None)
         self.ops: list[tuple[str, int | None]] = []

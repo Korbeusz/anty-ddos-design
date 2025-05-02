@@ -133,7 +133,7 @@ class RollingCountMinSketch(Elaboratable):
         # -------------------------------------------------------------- #
         with Transaction(name="Resp_cms0").body(
             m,
-            request=self._resp_pending & (self._active_sel == 0) & self._res_fifo.write.ready,
+            request=self._resp_pending & (self._active_sel == 0),
         ):
             resp = self._cms0.query_resp(m)
             self._res_fifo.write(m, count=resp["count"])
@@ -141,7 +141,7 @@ class RollingCountMinSketch(Elaboratable):
 
         with Transaction(name="Resp_cms1").body(
             m,
-            request=self._resp_pending & (self._active_sel == 1) & self._res_fifo.write.ready,
+            request=self._resp_pending & (self._active_sel == 1),
         ):
             resp = self._cms1.query_resp(m)
             self._res_fifo.write(m, count=resp["count"])
@@ -164,7 +164,7 @@ class RollingCountMinSketch(Elaboratable):
         # -------------------------------------------------------------- #
         #  set_mode                                                      #
         # -------------------------------------------------------------- #
-        @def_method(m, self.set_mode, ready=~self._clr_busy)
+        @def_method(m, self.set_mode, ready=(~self._clr_busy & ~(self._fifo1.read.ready & self._fifo2.read.ready )))
         def _(mode):
             m.d.sync += self._mode.eq(mode)
 
