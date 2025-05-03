@@ -80,6 +80,7 @@ class RollingCountMinSketch(Elaboratable):
         self._clr_pending  = Signal()
         self._clr_busy     = Signal()
         self._clr_timer    = Signal(range(self.width + 1))
+        self._new_mode     = Signal(1)  # new mode (for change_roles)
 
     # ------------------------------------------------------------------ #
     #  Helper: pop+concatenate ingress pair                               #
@@ -174,9 +175,10 @@ class RollingCountMinSketch(Elaboratable):
         # -------------------------------------------------------------- #
         #  set_mode                                                      #
         # -------------------------------------------------------------- #
+        m.d.sync+=self._mode.eq(self._new_mode)
         @def_method(m, self.set_mode, ready=(~self._clr_busy & ~self._clr_pending))
         def _(mode):
-            m.d.sync += self._mode.eq(mode)
+            m.d.sync += self._new_mode.eq(mode)
             log.debug(m, True, "set_mode: %s", mode)
 
         # -------------------------------------------------------------- #

@@ -20,7 +20,7 @@ class ConditionalReadinessCircuit(Elaboratable):
         self.ready_method     = Method(o=[("data", 8)])
         self.not_ready_method = Method(o=[("data", 8)])
         self.get_result       = Method(o=[("data", 8)])   # <── new!
-
+        self.change_cond_method = Method()
     # ------------------------------------------------------------------
     #  Elaborate
     # ------------------------------------------------------------------
@@ -35,6 +35,11 @@ class ConditionalReadinessCircuit(Elaboratable):
         @def_method(m, self.not_ready_method, ready=C(1))
         def _never_ok():
             return {"data": 99}
+        
+        @def_method(m, self.change_cond_method)
+        def _change_cond():
+            m.d.sync += self.cond.eq(~self.cond)
+            
 
         # -------- consumer (transaction) ------------------------------
     #    with Transaction(name="PickOne").body(m, request=self.cond):
@@ -69,18 +74,21 @@ class TestConditionalReadiness(TestCaseWithSimulator):
  
     # ---------- checker -------------------------------------------------
     async def checker(self, sim: TestbenchContext):
-        resp = await self.dut.get_result.call(sim)
+        resp = 0
+        await self.dut.change_cond_method.call(sim)
+        #inspect the cond signal using sim get_signal_value
+        print(f"cond = {self.dut.cond}")
         print(f"resp = {resp}")
-        sim.tick()
+     #   sim.tick()
 
 
-        resp = await self.dut.get_result.call(sim)
+        await self.dut.change_cond_method.call(sim)
         print(f"resp = {resp}")
-        sim.tick()
+      #  sim.tick()
 
-        resp = await self.dut.get_result.call(sim)
+        await self.dut.change_cond_method.call(sim)
         print(f"resp = {resp}")
-        sim.tick()
+       # sim.tick()
 
 
     # ---------- top-level test -----------------------------------------

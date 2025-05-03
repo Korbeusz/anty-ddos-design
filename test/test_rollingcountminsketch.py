@@ -24,7 +24,7 @@ class TestRollingCountMinSketch(TestCaseWithSimulator):
     #  Stimulus generation
     # ------------------------------------------------------------------
     def setup_method(self):
-        seed(int(os.getenv("TEST_SEED", 42)))
+        seed(int(os.getenv("TEST_SEED", 69)))
 
         # ── DUT parameters ────────────────────────────────────────────
         self.depth          = 2
@@ -38,7 +38,7 @@ class TestRollingCountMinSketch(TestCaseWithSimulator):
         self.fifo2 = deque()
 
         # ── Simulation trace ------------------------------------------
-        self.operation_count = 15000
+        self.operation_count = 20000
         # Each op is a tuple: (kind, payload)
         #   kind ∈ {"insert", "query", "change_roles"}
         #   payload = (lo, hi) for insert/query; None for change_roles
@@ -120,9 +120,9 @@ class TestRollingCountMinSketch(TestCaseWithSimulator):
         for kind, payload in self.ops:
             # Random idle cycles to rattle FSM corner-cases
             while random() >= 0.7:
-                print(f"[DRIVER] Adding idle cycle")
-                await sim.tick()
-                print(f"[DRIVER] Idle cycle complete")
+           #     print(f"[DRIVER] Adding idle cycle")
+                 await sim.tick()
+             #   print(f"[DRIVER] Idle cycle complete")
 
             if kind == "change_roles":
                 # ``change_roles`` is only legal in UPDATE mode
@@ -174,7 +174,7 @@ class TestRollingCountMinSketch(TestCaseWithSimulator):
                 print(f"[DRIVER] fifo2.call completed")
             else:
                 raise ValueError(f"Unknown operation: {kind}")
-            await sim.tick()
+           # await sim.tick()
             # Give the DUT at least one cycle to move things along
             #print(f"[DRIVER] Adding cycle for operation {kind}")
             #await sim.tick()
