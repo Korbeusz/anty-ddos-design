@@ -153,7 +153,7 @@ class CountHashTab(Elaboratable):
                 pipe_is_insert.eq(1),
             ]
         
-        @def_method(m, self.query_resp, ready=resp_valid & ~clr_running)
+        @def_method(m, self.query_resp, ready=resp_valid)
         def _():
             m.d.sync += resp_valid.eq(resp_ready)
             return {"count": resp_data}

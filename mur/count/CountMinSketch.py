@@ -121,7 +121,7 @@ class CountMinSketch(Elaboratable):
                 row.insert(m, data=data)  # broadcast
         
           # ---------------------- QUERY — response phase ----------------
-        @def_method(m, self.query_resp, ready= ~clr_running)
+        @def_method(m, self.query_resp)
         def _():
             # Collect the per‑row counters *in the same cycle*, compute the
             # minimum completely combinatorially, and clear the *resp_valid*

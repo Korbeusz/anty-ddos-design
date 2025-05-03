@@ -1,8 +1,8 @@
 from random import randint, random, seed
 from collections import deque
-
+import logging
 from transactron.testing import TestCaseWithSimulator, SimpleTestCircuit
-
+import os
 # Adjust the import if your package hierarchy is different
 from mur.count.RollingCountMinSketch import RollingCountMinSketch
 
@@ -24,7 +24,7 @@ class TestRollingCountMinSketch(TestCaseWithSimulator):
     #  Stimulus generation
     # ------------------------------------------------------------------
     def setup_method(self):
-        seed(42)
+        seed(int(os.getenv("TEST_SEED", 42)))
 
         # ── DUT parameters ────────────────────────────────────────────
         self.depth          = 2
@@ -38,7 +38,7 @@ class TestRollingCountMinSketch(TestCaseWithSimulator):
         self.fifo2 = deque()
 
         # ── Simulation trace ------------------------------------------
-        self.operation_count = 15_000
+        self.operation_count = 15000
         # Each op is a tuple: (kind, payload)
         #   kind ∈ {"insert", "query", "change_roles"}
         #   payload = (lo, hi) for insert/query; None for change_roles
@@ -63,7 +63,7 @@ class TestRollingCountMinSketch(TestCaseWithSimulator):
             r = random()
 
             # 10 % probability to swap roles (only while updating)
-            if r < 0.01:
+            if r < 0.10:
                 self.ops.append(("change_roles", None))
 
                 # Immediate effect in the model: toggle active and clear model
@@ -78,7 +78,7 @@ class TestRollingCountMinSketch(TestCaseWithSimulator):
 
             if r < 0.75:
                 # INSERT ------------------------------------------------
-                if len(self.fifo2) == 4 or (random() < 0.50 and len(self.fifo1) < 4):
+                if len(self.fifo2) == 1 or (random() < 0.50 and len(self.fifo1) < 1):
                     self.fifo1.append(in_value)
                     self.ops.append(("insert1", in_value))
                 else:
@@ -92,7 +92,7 @@ class TestRollingCountMinSketch(TestCaseWithSimulator):
                         self.model[row][h(row, word)] += 1
             else:
                 # QUERY -------------------------------------------------
-                if len(self.fifo2) == 4 or (random() < 0.50 and len(self.fifo1) < 4):
+                if len(self.fifo2) == 1 or (random() < 0.50 and len(self.fifo1) < 1):
                     self.fifo1.append(in_value)
                     self.ops.append(("query1", in_value))
                 else:
@@ -104,6 +104,7 @@ class TestRollingCountMinSketch(TestCaseWithSimulator):
                     word = (hi << self.item_width) | lo
                     min_est = min(self.model[row][h(row, word)]for row in range(self.depth))
                     self.expected.append({"count": min_est})
+            
 
     # ------------------------------------------------------------------
     #  Test-bench processes
@@ -115,7 +116,7 @@ class TestRollingCountMinSketch(TestCaseWithSimulator):
         is *ready*, so we do not need explicit ready checks.
         """
         cur_mode = 0           # 0 = UPDATE, 1 = QUERY (matches DUT reset)
-
+        
         for kind, payload in self.ops:
             # Random idle cycles to rattle FSM corner-cases
             while random() >= 0.7:
@@ -173,6 +174,7 @@ class TestRollingCountMinSketch(TestCaseWithSimulator):
                 print(f"[DRIVER] fifo2.call completed")
             else:
                 raise ValueError(f"Unknown operation: {kind}")
+            await sim.tick()
             # Give the DUT at least one cycle to move things along
             #print(f"[DRIVER] Adding cycle for operation {kind}")
             #await sim.tick()
@@ -180,6 +182,7 @@ class TestRollingCountMinSketch(TestCaseWithSimulator):
 
     async def checker_process(self, sim):
         """Pulls *read_count* results and compares with the model."""
+        print(f"[CHECKER] Starting checker with {len(self.expected)} expected results")
         while self.expected:
             # Randomised back-pressure on the result FIFO
             #while random() >= 0.5:
@@ -200,6 +203,12 @@ class TestRollingCountMinSketch(TestCaseWithSimulator):
     #  Top-level test
     # ------------------------------------------------------------------
     def test_randomised(self):
+        file_handler = logging.FileHandler("test_rollingcountminsketch.log", mode="w")
+        file_handler.setLevel(logging.DEBUG)
+
+        logger = logging.getLogger("count.rolling_cms")
+        logger.setLevel(logging.DEBUG)
+        logger.addHandler(file_handler)
         print("[TEST] Creating RollingCountMinSketch instance")
         core = RollingCountMinSketch(
             depth            = self.depth,

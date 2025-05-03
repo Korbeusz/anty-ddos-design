@@ -1,0 +1,323 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-8.0.0, pluggy-1.5.0
+rootdir: /home/mati/mur
+configfile: pytest.ini
+plugins: hypothesis-6.99.6, xdist-3.5.0
+collected 1 item
+
+test/test_rollingcountminsketch.py [TEST] Creating RollingCountMinSketch instance
+[TEST] RollingCountMinSketch instance created
+[TEST] Creating SimpleTestCircuit
+[TEST] SimpleTestCircuit created
+[TEST] Starting simulation
+[TEST] Adding driver process
+[TEST] Adding checker process
+[DRIVER] Calling fifo2.call with data=37709
+[CHECKER] Calling read_count
+[DRIVER] fifo2.call completed
+[DRIVER] Calling fifo2.call with data=60090
+[DRIVER] fifo2.call completed
+[DRIVER] Calling fifo2.call with data=44420
+[DRIVER] fifo2.call completed
+[DRIVER] Calling fifo1.call with data=29562
+[DRIVER] fifo1.call completed
+[DRIVER] Calling fifo1.call with data=34608
+[DRIVER] fifo1.call completed
+[DRIVER] Calling fifo1.call with data=5995
+[DRIVER] fifo1.call completed
+[DRIVER] Calling fifo2.call with data=17733
+[DRIVER] fifo2.call completed
+[DRIVER] Setting mode to QUERY (1)
+[DRIVER] Mode set to QUERY (1)
+[DRIVER] Calling fifo2.call with data=17964
+[DRIVER] fifo2.call completed
+[DRIVER] Setting mode to UPDATE (0)
+[DRIVER] Mode set to UPDATE (0)
+[DRIVER] Calling fifo2.call with data=48033
+[DRIVER] fifo2.call completed
+[DRIVER] Setting mode to QUERY (1)
+[DRIVER] Mode set to QUERY (1)
+[DRIVER] Calling fifo1.call with data=29828
+[DRIVER] fifo1.call completed
+[DRIVER] Adding idle cycle
+[DRIVER] Idle cycle complete
+[DRIVER] Adding idle cycle
+[DRIVER] Idle cycle complete
+[DRIVER] Adding idle cycle
+[DRIVER] Idle cycle complete
+[DRIVER] Setting mode to UPDATE (0)
+[DRIVER] Mode set to UPDATE (0)
+[DRIVER] Calling fifo2.call with data=20041
+[DRIVER] fifo2.call completed
+[DRIVER] Setting mode to QUERY (1)
+[CHECKER] read_count completed with result Const(StructLayout({'count': 32}), 0), expected {'count': 0}
+[CHECKER] Calling read_count
+[DRIVER] Mode set to QUERY (1)
+[DRIVER] Calling fifo1.call with data=43839
+[DRIVER] fifo1.call completed
+[DRIVER] Setting mode to UPDATE (0)
+[DRIVER] Mode set to UPDATE (0)
+[DRIVER] Calling fifo1.call with data=35468
+[DRIVER] fifo1.call completed
+[DRIVER] Calling fifo1.call with data=9635
+[DRIVER] fifo1.call completed
+[DRIVER] Adding idle cycle
+[DRIVER] Idle cycle complete
+[DRIVER] Setting mode to QUERY (1)
+[DRIVER] Mode set to QUERY (1)
+[DRIVER] Calling fifo1.call with data=1220
+[CHECKER] read_count completed with result Const(StructLayout({'count': 32}), 0), expected {'count': 0}
+[CHECKER] Calling read_count
+[DRIVER] fifo1.call completed
+[DRIVER] Calling fifo1.call with data=56720
+[DRIVER] fifo1.call completed
+[DRIVER] Adding idle cycle
+[DRIVER] Idle cycle complete
+[DRIVER] Setting mode to UPDATE (0)
+[DRIVER] Mode set to UPDATE (0)
+[DRIVER] Calling fifo2.call with data=54918
+[DRIVER] fifo2.call completed
+[DRIVER] Adding idle cycle
+[DRIVER] Idle cycle complete
+[DRIVER] Calling fifo1.call with data=29324
+[DRIVER] fifo1.call completed
+[DRIVER] Calling fifo1.call with data=25519
+[DRIVER] fifo1.call completed
+[DRIVER] Calling fifo1.call with data=762
+[DRIVER] fifo1.call completed
+[DRIVER] Calling change_roles
+[DRIVER] change_roles completed
+[DRIVER] Adding idle cycle
+[DRIVER] Idle cycle complete
+[DRIVER] Calling fifo2.call with data=21187
+[DRIVER] fifo2.call completed
+[DRIVER] Adding idle cycle
+[DRIVER] Idle cycle complete
+[DRIVER] Calling fifo1.call with data=11998
+[DRIVER] fifo1.call completed
+[DRIVER] Adding idle cycle
+[DRIVER] Idle cycle complete
+[DRIVER] Adding idle cycle
+[DRIVER] Idle cycle complete
+[DRIVER] Adding idle cycle
+[DRIVER] Idle cycle complete
+[DRIVER] Calling fifo2.call with data=51988
+[DRIVER] fifo2.call completed
+[DRIVER] Setting mode to QUERY (1)
+[DRIVER] Mode set to QUERY (1)
+[DRIVER] Calling fifo2.call with data=10572
+[DRIVER] fifo2.call completed
+[DRIVER] Calling fifo1.call with data=53359
+[DRIVER] fifo1.call completed
+[DRIVER] Adding idle cycle
+[DRIVER] Idle cycle complete
+[DRIVER] Calling fifo2.call with data=64478
+[DRIVER] fifo2.call completed
+[DRIVER] Setting mode to UPDATE (0)
+[DRIVER] Mode set to UPDATE (0)
+[DRIVER] Calling fifo1.call with data=62575
+[DRIVER] fifo1.call completed
+[DRIVER] Adding idle cycle
+[CHECKER] read_count completed with result Const(StructLayout({'count': 32}), 0), expected {'count': 0}
+[CHECKER] Calling read_count
+[DRIVER] Idle cycle complete
+[DRIVER] Calling fifo2.call with data=40606
+[DRIVER] fifo2.call completed
+[DRIVER] Setting mode to QUERY (1)
+[DRIVER] Mode set to QUERY (1)
+[DRIVER] Calling fifo2.call with data=62280
+[DRIVER] fifo2.call completed
+[DRIVER] Adding idle cycle
+[DRIVER] Idle cycle complete
+[DRIVER] Adding idle cycle
+[DRIVER] Idle cycle complete
+[DRIVER] Setting mode to UPDATE (0)
+[DRIVER] Mode set to UPDATE (0)
+[DRIVER] Calling fifo1.call with data=12000
+[DRIVER] fifo1.call completed
+[DRIVER] Adding idle cycle
+[DRIVER] Idle cycle complete
+[DRIVER] Setting mode to QUERY (1)
+[CHECKER] read_count completed with result Const(StructLayout({'count': 32}), 0), expected {'count': 0}
+[CHECKER] Calling read_count
+[DRIVER] Mode set to QUERY (1)
+[DRIVER] Calling fifo2.call with data=4145
+[DRIVER] fifo2.call completed
+[DRIVER] Adding idle cycle
+[DRIVER] Idle cycle complete
+[DRIVER] Adding idle cycle
+[DRIVER] Idle cycle complete
+[DRIVER] Adding idle cycle
+[DRIVER] Idle cycle complete
+[DRIVER] Adding idle cycle
+[DRIVER] Idle cycle complete
+[DRIVER] Setting mode to UPDATE (0)
+[DRIVER] Mode set to UPDATE (0)
+[DRIVER] Calling fifo1.call with data=27918
+[CHECKER] read_count completed with result Const(StructLayout({'count': 32}), 0), expected {'count': 0}
+[CHECKER] Calling read_count
+[DRIVER] fifo1.call completed
+[DRIVER] Adding idle cycle
+[DRIVER] Idle cycle complete
+[DRIVER] Calling fifo1.call with data=38408
+[DRIVER] fifo1.call completed
+[DRIVER] Setting mode to QUERY (1)
+[DRIVER] Mode set to QUERY (1)
+[DRIVER] Calling fifo1.call with data=20332
+[DRIVER] fifo1.call completed
+[DRIVER] Setting mode to UPDATE (0)
+[DRIVER] Mode set to UPDATE (0)
+[DRIVER] Calling fifo2.call with data=36662
+[DRIVER] fifo2.call completed
+[DRIVER] Adding idle cycle
+[DRIVER] Idle cycle complete
+[DRIVER] Calling fifo2.call with data=62167
+[DRIVER] fifo2.call completed
+[DRIVER] Calling fifo2.call with data=29781
+[DRIVER] fifo2.call completed
+[DRIVER] Adding idle cycle
+[DRIVER] Idle cycle complete
+[DRIVER] Adding idle cycle
+[DRIVER] Idle cycle complete
+[DRIVER] Adding idle cycle
+[DRIVER] Idle cycle complete
+[DRIVER] Setting mode to QUERY (1)
+[DRIVER] Mode set to QUERY (1)
+[DRIVER] Calling fifo2.call with data=50621
+[DRIVER] fifo2.call completed
+[DRIVER] Setting mode to UPDATE (0)
+[DRIVER] Mode set to UPDATE (0)
+[DRIVER] Calling fifo2.call with data=29045
+[DRIVER] fifo2.call completed
+[DRIVER] Adding idle cycle
+[DRIVER] Idle cycle complete
+[DRIVER] Calling change_roles
+[DRIVER] change_roles completed
+[DRIVER] Calling fifo1.call with data=21235
+[DRIVER] fifo1.call completed
+[DRIVER] Calling fifo2.call with data=12583
+[CHECKER] read_count completed with result Const(StructLayout({'count': 32}), 1), expected {'count': 0}
+F
+
+=================================== FAILURES ===================================
+__________________ TestRollingCountMinSketch.test_randomised ___________________
+
+self = <test.test_rollingcountminsketch.TestRollingCountMinSketch object at 0x7326315b5520>
+
+    def test_randomised(self):
+        file_handler = logging.FileHandler("test_rollingcountminsketch.log", mode="w")
+        file_handler.setLevel(logging.DEBUG)
+    
+        logger = logging.getLogger("count.rolling_cms")
+        logger.setLevel(logging.DEBUG)
+        logger.addHandler(file_handler)
+        print("[TEST] Creating RollingCountMinSketch instance")
+        core = RollingCountMinSketch(
+            depth            = self.depth,
+            width            = self.width,
+            counter_width    = self.counter_width,
+            input_data_width = self.item_width,
+            hash_params      = self.hash_params,
+        )
+        print("[TEST] RollingCountMinSketch instance created")
+    
+        print("[TEST] Creating SimpleTestCircuit")
+        self.dut = SimpleTestCircuit(core)
+        print("[TEST] SimpleTestCircuit created")
+    
+        print("[TEST] Starting simulation")
+>       with self.run_simulation(self.dut) as sim:
+
+test/test_rollingcountminsketch.py:224: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/lib/python3.12/contextlib.py:144: in __exit__
+    next(self.gen)
+../transactron/transactron/testing/infrastructure.py:330: in run_simulation
+    sim.run()
+../transactron/transactron/testing/infrastructure.py:192: in run
+    super().run()
+../amaranth/amaranth/sim/core.py:302: in run
+    while self.advance():
+../amaranth/amaranth/sim/core.py:342: in advance
+    return self._engine.advance()
+../amaranth/amaranth/sim/pysim.py:707: in advance
+    testbench.run()
+../amaranth/amaranth/sim/_async.py:756: in run
+    self.waits_on = self.coroutine.send(None)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test.test_rollingcountminsketch.TestRollingCountMinSketch object at 0x7326315b5520>
+sim = <amaranth.sim._async.TestbenchContext object at 0x73262fb995b0>
+
+    async def checker_process(self, sim):
+        """Pulls *read_count* results and compares with the model."""
+        while self.expected:
+            # Randomised back-pressure on the result FIFO
+            #while random() >= 0.5:
+            #    print(f"[CHECKER] Adding back-pressure cycle")
+            #    await sim.tick()
+            #    print(f"[CHECKER] Back-pressure cycle complete")
+    
+            print(f"[CHECKER] Calling read_count")
+            resp = await self.dut.read_count.call(sim)
+            expected = self.expected.popleft()
+            print(f"[CHECKER] read_count completed with result {resp}, expected {expected}")
+    
+>           assert resp == expected
+E           AssertionError: assert Const(StructL...unt': 32}), 1) == {'count': 0}
+E             
+E             Use -v to get more diff
+
+test/test_rollingcountminsketch.py:195: AssertionError
+------------------------------ Captured log call -------------------------------
+DEBUG    count.rolling_cms:logging.py:84 [mur/count/RollingCountMinSketch.py:109] cms0 insert
+DEBUG    count.rolling_cms:logging.py:84 [mur/count/RollingCountMinSketch.py:109] cms0 insert
+DEBUG    count.rolling_cms:logging.py:84 [mur/count/RollingCountMinSketch.py:109] cms0 insert
+DEBUG    count.rolling_cms:logging.py:84 [mur/count/RollingCountMinSketch.py:178] set_mode: %s
+DEBUG    count.rolling_cms:logging.py:84 [mur/count/RollingCountMinSketch.py:178] set_mode: %s
+DEBUG    count.rolling_cms:logging.py:84 [mur/count/RollingCountMinSketch.py:178] set_mode: %s
+DEBUG    count.rolling_cms:logging.py:84 [mur/count/RollingCountMinSketch.py:126] cms0 query_req
+DEBUG    count.rolling_cms:logging.py:84 [mur/count/RollingCountMinSketch.py:146] cms0 query_resp %s
+DEBUG    count.rolling_cms:logging.py:84 [mur/count/RollingCountMinSketch.py:178] set_mode: %s
+DEBUG    count.rolling_cms:logging.py:84 [mur/count/RollingCountMinSketch.py:178] set_mode: %s
+DEBUG    count.rolling_cms:logging.py:84 [mur/count/RollingCountMinSketch.py:126] cms0 query_req
+DEBUG    count.rolling_cms:logging.py:84 [mur/count/RollingCountMinSketch.py:178] set_mode: %s
+DEBUG    count.rolling_cms:logging.py:84 [mur/count/RollingCountMinSketch.py:109] cms0 insert
+DEBUG    count.rolling_cms:logging.py:84 [mur/count/RollingCountMinSketch.py:109] cms0 insert
+DEBUG    count.rolling_cms:logging.py:84 [mur/count/RollingCountMinSketch.py:146] cms0 query_resp %s
+DEBUG    count.rolling_cms:logging.py:84 [mur/count/RollingCountMinSketch.py:178] set_mode: %s
+DEBUG    count.rolling_cms:logging.py:84 [mur/count/RollingCountMinSketch.py:178] set_mode: %s
+DEBUG    count.rolling_cms:logging.py:84 [mur/count/RollingCountMinSketch.py:109] cms0 insert
+DEBUG    count.rolling_cms:logging.py:84 [mur/count/RollingCountMinSketch.py:170] change_roles: %s
+DEBUG    count.rolling_cms:logging.py:84 [mur/count/RollingCountMinSketch.py:193] cms0 clear
+DEBUG    count.rolling_cms:logging.py:84 [mur/count/RollingCountMinSketch.py:115] cms1 insert
+DEBUG    count.rolling_cms:logging.py:84 [mur/count/RollingCountMinSketch.py:115] cms1 insert
+DEBUG    count.rolling_cms:logging.py:84 [mur/count/RollingCountMinSketch.py:212] cms clear done
+DEBUG    count.rolling_cms:logging.py:84 [mur/count/RollingCountMinSketch.py:178] set_mode: %s
+DEBUG    count.rolling_cms:logging.py:84 [mur/count/RollingCountMinSketch.py:134] cms1 query_req
+DEBUG    count.rolling_cms:logging.py:84 [mur/count/RollingCountMinSketch.py:155] cms1 query_resp %s
+DEBUG    count.rolling_cms:logging.py:84 [mur/count/RollingCountMinSketch.py:178] set_mode: %s
+DEBUG    count.rolling_cms:logging.py:84 [mur/count/RollingCountMinSketch.py:115] cms1 insert
+DEBUG    count.rolling_cms:logging.py:84 [mur/count/RollingCountMinSketch.py:115] cms1 insert
+DEBUG    count.rolling_cms:logging.py:84 [mur/count/RollingCountMinSketch.py:178] set_mode: %s
+DEBUG    count.rolling_cms:logging.py:84 [mur/count/RollingCountMinSketch.py:134] cms1 query_req
+DEBUG    count.rolling_cms:logging.py:84 [mur/count/RollingCountMinSketch.py:178] set_mode: %s
+DEBUG    count.rolling_cms:logging.py:84 [mur/count/RollingCountMinSketch.py:155] cms1 query_resp %s
+DEBUG    count.rolling_cms:logging.py:84 [mur/count/RollingCountMinSketch.py:178] set_mode: %s
+DEBUG    count.rolling_cms:logging.py:84 [mur/count/RollingCountMinSketch.py:134] cms1 query_req
+DEBUG    count.rolling_cms:logging.py:84 [mur/count/RollingCountMinSketch.py:155] cms1 query_resp %s
+DEBUG    count.rolling_cms:logging.py:84 [mur/count/RollingCountMinSketch.py:178] set_mode: %s
+DEBUG    count.rolling_cms:logging.py:84 [mur/count/RollingCountMinSketch.py:178] set_mode: %s
+DEBUG    count.rolling_cms:logging.py:84 [mur/count/RollingCountMinSketch.py:178] set_mode: %s
+DEBUG    count.rolling_cms:logging.py:84 [mur/count/RollingCountMinSketch.py:115] cms1 insert
+DEBUG    count.rolling_cms:logging.py:84 [mur/count/RollingCountMinSketch.py:115] cms1 insert
+DEBUG    count.rolling_cms:logging.py:84 [mur/count/RollingCountMinSketch.py:115] cms1 insert
+DEBUG    count.rolling_cms:logging.py:84 [mur/count/RollingCountMinSketch.py:178] set_mode: %s
+DEBUG    count.rolling_cms:logging.py:84 [mur/count/RollingCountMinSketch.py:134] cms1 query_req
+DEBUG    count.rolling_cms:logging.py:84 [mur/count/RollingCountMinSketch.py:178] set_mode: %s
+DEBUG    count.rolling_cms:logging.py:84 [mur/count/RollingCountMinSketch.py:155] cms1 query_resp %s
+DEBUG    count.rolling_cms:logging.py:84 [mur/count/RollingCountMinSketch.py:170] change_roles: %s
+DEBUG    count.rolling_cms:logging.py:84 [mur/count/RollingCountMinSketch.py:205] cms1 clear
+=========================== short test summary info ============================
+FAILED test/test_rollingcountminsketch.py::TestRollingCountMinSketch::test_randomised
+============================== 1 failed in 0.65s ===============================

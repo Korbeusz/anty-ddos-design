@@ -1,6 +1,6 @@
 from __future__ import annotations
 # RollingCountMinSketch – request-flagged transactions (idiomatic “with” form)
-
+from transactron.lib import logging
 from amaranth import *
 from amaranth.lib.data import StructLayout
 from transactron import *
@@ -8,6 +8,7 @@ from transactron.core import TModule, Transaction
 from transactron.lib import BasicFifo
 
 from mur.count.CountMinSketch import CountMinSketch
+log = logging.HardwareLogger("count.rolling_cms")
 
 
 __all__ = ["RollingCountMinSketch"]
@@ -62,6 +63,7 @@ class RollingCountMinSketch(Elaboratable):
         word_layout = StructLayout({"data": self.item_width})
         self._fifo1 = BasicFifo(word_layout, 4)
         self._fifo2 = BasicFifo(word_layout, 4)
+        
         self.fifo1 = self._fifo1.write
         self.fifo2 = self._fifo2.write
         # Result FIFO ---------------------------------------------------
@@ -72,7 +74,8 @@ class RollingCountMinSketch(Elaboratable):
         self._active_sel   = Signal(1, init=0)  # 0 → cms0 active, 1 → cms1
         self._mode         = Signal(1, init=0)  # 0 → UPDATE, 1 → QUERY
         self._resp_pending = Signal(5, init=0)           # waiting for query_resp
-
+        self.old_mode      = Signal(1)  # previous mode (for change_roles)
+        self.old_active    = Signal(1)  # previous active sketch (for change_roles)
         # Background-clear bookkeeping
         self._clr_pending  = Signal()
         self._clr_busy     = Signal()
@@ -96,7 +99,7 @@ class RollingCountMinSketch(Elaboratable):
             self._fifo1, self._fifo2,
             self._res_fifo,
         ]
-
+        
 
         # -------------------------------------------------------------- #
         #  UPDATE-mode inserts (two tiny transactions)                   #
@@ -105,11 +108,13 @@ class RollingCountMinSketch(Elaboratable):
             m, request=(~self._mode) & (self._active_sel == 0)
         ):
             self._cms0.insert(m, data=self._pop_pair(m))
+            log.debug(m, True, "cms0 insert")
 
         with Transaction(name="Upd_cms1").body(
             m, request=(~self._mode) & (self._active_sel == 1)
         ):
             self._cms1.insert(m, data=self._pop_pair(m))
+            log.debug(m, True, "cms1 insert")
 
         # -------------------------------------------------------------- #
         #  QUERY-mode: issue query_req                                   #
@@ -120,6 +125,7 @@ class RollingCountMinSketch(Elaboratable):
         ):
             self._cms0.query_req(m, data=self._pop_pair(m))
             m.d.sync += self._resp_pending.eq(self._resp_pending + 1)
+            log.debug(m, True, "cms0 query_req")
 
         with Transaction(name="QryReq_cms1").body(
             m,
@@ -127,25 +133,28 @@ class RollingCountMinSketch(Elaboratable):
         ):
             self._cms1.query_req(m, data=self._pop_pair(m))
             m.d.sync += self._resp_pending.eq(self._resp_pending + 1)
+            log.debug(m, True, "cms1 query_req")
 
         # -------------------------------------------------------------- #
         #  QUERY responses → result FIFO                                 #
         # -------------------------------------------------------------- #
         with Transaction(name="Resp_cms0").body(
             m,
-            request=(self._active_sel == 0),
+      
         ):
             resp = self._cms0.query_resp(m)
             self._res_fifo.write(m, count=resp["count"])
             m.d.sync += self._resp_pending.eq(self._resp_pending - 1)
+            log.debug(m, True, "cms0 query_resp %s", resp["count"])
 
         with Transaction(name="Resp_cms1").body(
             m,
-            request= (self._active_sel == 1),
+           
         ):
             resp = self._cms1.query_resp(m)
             self._res_fifo.write(m, count=resp["count"])
             m.d.sync += self._resp_pending.eq(self._resp_pending - 1)
+            log.debug(m, True, "cms1 query_resp %s", resp["count"])
 
         # -------------------------------------------------------------- #
         #  change_roles (allowed only in UPDATE)                         #
@@ -160,13 +169,15 @@ class RollingCountMinSketch(Elaboratable):
                 self._active_sel.eq(~self._active_sel),
                 self._clr_pending.eq(1),   # clear the *new* standby
             ]
-
+            log.debug(m, True, "change_roles: %s", self._active_sel)
+    
         # -------------------------------------------------------------- #
         #  set_mode                                                      #
         # -------------------------------------------------------------- #
-        @def_method(m, self.set_mode, ready=(~self._clr_busy & ~self._clr_pending & ~(self._fifo1.read.ready & self._fifo2.read.ready)& (self._resp_pending == 0)))
+        @def_method(m, self.set_mode, ready=(~self._clr_busy & ~self._clr_pending))
         def _(mode):
             m.d.sync += self._mode.eq(mode)
+            log.debug(m, True, "set_mode: %s", mode)
 
         # -------------------------------------------------------------- #
         #  Background clear (two transactions, one per standby sketch)   #
@@ -181,6 +192,7 @@ class RollingCountMinSketch(Elaboratable):
                 self._clr_pending.eq(0),
                 self._clr_timer.eq(0),
             ]
+            log.debug(m, True, "cms0 clear")
 
         with Transaction(name="Clr_cms1").body(
             m,
@@ -192,11 +204,13 @@ class RollingCountMinSketch(Elaboratable):
                 self._clr_pending.eq(0),
                 self._clr_timer.eq(0),
             ]
+            log.debug(m, True, "cms1 clear")
 
         # Clear latency timer ------------------------------------------
         with m.If(self._clr_busy):
             m.d.sync += self._clr_timer.eq(self._clr_timer + 1)
             with m.If(self._clr_timer == self.width - 1):
                 m.d.sync += self._clr_busy.eq(0)
+                log.debug(m, True, "cms clear done")
 
         return m
