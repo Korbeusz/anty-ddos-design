@@ -24,7 +24,7 @@ class TestRollingCountMinSketch(TestCaseWithSimulator):
     #  Stimulus generation
     # ------------------------------------------------------------------
     def setup_method(self):
-        seed(int(os.getenv("TEST_SEED", 23)))
+        seed(int(os.getenv("TEST_SEED", 2137)))
         
         # Setup logger for the test class
         self.logger = logging.getLogger("count.rolling_cms")
@@ -81,7 +81,7 @@ class TestRollingCountMinSketch(TestCaseWithSimulator):
 
             if r < 0.75:
                 # INSERT ------------------------------------------------
-                if len(self.fifo2) == 2 or (random() < 0.5 and len(self.fifo1) < 2):
+                if len(self.fifo2) == 1 or (random() < 0.5 and len(self.fifo1) < 8):
                     self.fifo1.append(in_value)
                     self.ops.append(("insert1", in_value))
                 else:
@@ -95,7 +95,7 @@ class TestRollingCountMinSketch(TestCaseWithSimulator):
                         self.model[row][h(row, word)] += 1
             else:
                 # QUERY -------------------------------------------------
-                if len(self.fifo2) == 2 or (random() < 0.5 and len(self.fifo1) < 2):
+                if len(self.fifo2) == 1 or (random() < 0.5 and len(self.fifo1) < 8):
                     self.fifo1.append(in_value)
                     self.ops.append(("query1", in_value))
                 else:

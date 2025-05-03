@@ -61,8 +61,8 @@ class RollingCountMinSketch(Elaboratable):
 
         # Ingress staging FIFOs ----------------------------------------
         word_layout = StructLayout({"data": self.item_width})
-        self._fifo1 = BasicFifo(word_layout, depth=2)
-        self._fifo2 = BasicFifo(word_layout, depth=2)
+        self._fifo1 = BasicFifo(word_layout, depth=8)
+        self._fifo2 = BasicFifo(word_layout, depth=1)
         
         self.fifo1 = self._fifo1.write
         self.fifo2 = self._fifo2.write
