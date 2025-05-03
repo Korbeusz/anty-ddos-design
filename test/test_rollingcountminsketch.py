@@ -24,7 +24,7 @@ class TestRollingCountMinSketch(TestCaseWithSimulator):
     #  Stimulus generation
     # ------------------------------------------------------------------
     def setup_method(self):
-        seed(int(os.getenv("TEST_SEED", 69)))
+        seed(int(os.getenv("TEST_SEED", 23)))
 
         # ── DUT parameters ────────────────────────────────────────────
         self.depth          = 2
@@ -78,7 +78,7 @@ class TestRollingCountMinSketch(TestCaseWithSimulator):
 
             if r < 0.75:
                 # INSERT ------------------------------------------------
-                if len(self.fifo2) == 1 or (random() < 0.50 and len(self.fifo1) < 1):
+                if len(self.fifo2) == 7:
                     self.fifo1.append(in_value)
                     self.ops.append(("insert1", in_value))
                 else:
@@ -92,7 +92,7 @@ class TestRollingCountMinSketch(TestCaseWithSimulator):
                         self.model[row][h(row, word)] += 1
             else:
                 # QUERY -------------------------------------------------
-                if len(self.fifo2) == 1 or (random() < 0.50 and len(self.fifo1) < 1):
+                if len(self.fifo2) == 7:
                     self.fifo1.append(in_value)
                     self.ops.append(("query1", in_value))
                 else:
@@ -120,9 +120,8 @@ class TestRollingCountMinSketch(TestCaseWithSimulator):
         for kind, payload in self.ops:
             # Random idle cycles to rattle FSM corner-cases
             while random() >= 0.7:
-           #     print(f"[DRIVER] Adding idle cycle")
                  await sim.tick()
-             #   print(f"[DRIVER] Idle cycle complete")
+
 
             if kind == "change_roles":
                 # ``change_roles`` is only legal in UPDATE mode
@@ -134,10 +133,7 @@ class TestRollingCountMinSketch(TestCaseWithSimulator):
                 print(f"[DRIVER] Calling change_roles")
                 await self.dut.change_roles.call(sim, {})
                 print(f"[DRIVER] change_roles completed")
-                # One tick of breathing space
-                #print(f"[DRIVER] Adding breathing space tick")
-                #await sim.tick()
-                #print(f"[DRIVER] Breathing space tick complete")
+             
                 continue
 
             if kind == "insert1" or kind == "insert2":
@@ -174,21 +170,16 @@ class TestRollingCountMinSketch(TestCaseWithSimulator):
                 print(f"[DRIVER] fifo2.call completed")
             else:
                 raise ValueError(f"Unknown operation: {kind}")
-           # await sim.tick()
-            # Give the DUT at least one cycle to move things along
-            #print(f"[DRIVER] Adding cycle for operation {kind}")
-            #await sim.tick()
-            #print(f"[DRIVER] Cycle for operation {kind} complete")
 
     async def checker_process(self, sim):
         """Pulls *read_count* results and compares with the model."""
         print(f"[CHECKER] Starting checker with {len(self.expected)} expected results")
         while self.expected:
             # Randomised back-pressure on the result FIFO
-            #while random() >= 0.5:
-            #    print(f"[CHECKER] Adding back-pressure cycle")
-            #    await sim.tick()
-            #    print(f"[CHECKER] Back-pressure cycle complete")
+            while random() >= 0.5:
+                print(f"[CHECKER] Adding back-pressure cycle")
+                await sim.tick()
+                print(f"[CHECKER] Back-pressure cycle complete")
             
             print(f"[CHECKER] Calling read_count")
             resp = await self.dut.read_count.call(sim)

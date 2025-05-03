@@ -61,8 +61,8 @@ class RollingCountMinSketch(Elaboratable):
 
         # Ingress staging FIFOs ----------------------------------------
         word_layout = StructLayout({"data": self.item_width})
-        self._fifo1 = BasicFifo(word_layout, 4)
-        self._fifo2 = BasicFifo(word_layout, 4)
+        self._fifo1 = BasicFifo(word_layout, depth=8)
+        self._fifo2 = BasicFifo(word_layout, depth=8)
         
         self.fifo1 = self._fifo1.write
         self.fifo2 = self._fifo2.write
@@ -81,6 +81,7 @@ class RollingCountMinSketch(Elaboratable):
         self._clr_busy     = Signal()
         self._clr_timer    = Signal(range(self.width + 1))
         self._new_mode     = Signal(1)  # new mode (for change_roles)
+        
 
     # ------------------------------------------------------------------ #
     #  Helper: pop+concatenate ingress pair                               #
