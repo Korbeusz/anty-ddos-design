@@ -14,7 +14,7 @@ class TestRollingCountMinSketch(TestCaseWithSimulator):
     * Generates a stream of UPDATE / QUERY traffic with occasional
       role-swaps (``change_roles``) exactly like a production data-path.
     * Keeps a software reference model of *both* internal Count-Min
-      sketches, including the “ping-pong” active/stand-by logic and the
+      sketches, including the "ping-pong" active/stand-by logic and the
       background clear that follows a role swap.
     * Verifies every QUERY response byte-for-byte against the model while
       exercising all handshake, back-pressure and arbitration paths.
@@ -25,6 +25,9 @@ class TestRollingCountMinSketch(TestCaseWithSimulator):
     # ------------------------------------------------------------------
     def setup_method(self):
         seed(int(os.getenv("TEST_SEED", 23)))
+        
+        # Setup logger for the test class
+        self.logger = logging.getLogger("count.rolling_cms")
 
         # ── DUT parameters ────────────────────────────────────────────
         self.depth          = 2
@@ -78,7 +81,7 @@ class TestRollingCountMinSketch(TestCaseWithSimulator):
 
             if r < 0.75:
                 # INSERT ------------------------------------------------
-                if len(self.fifo2) == 7:
+                if len(self.fifo2) == 2 or (random() < 0.5 and len(self.fifo1) < 2):
                     self.fifo1.append(in_value)
                     self.ops.append(("insert1", in_value))
                 else:
@@ -92,7 +95,7 @@ class TestRollingCountMinSketch(TestCaseWithSimulator):
                         self.model[row][h(row, word)] += 1
             else:
                 # QUERY -------------------------------------------------
-                if len(self.fifo2) == 7:
+                if len(self.fifo2) == 2 or (random() < 0.5 and len(self.fifo1) < 2):
                     self.fifo1.append(in_value)
                     self.ops.append(("query1", in_value))
                 else:
@@ -126,69 +129,69 @@ class TestRollingCountMinSketch(TestCaseWithSimulator):
             if kind == "change_roles":
                 # ``change_roles`` is only legal in UPDATE mode
                 if cur_mode != 0:
-                    print(f"[DRIVER] Setting mode to UPDATE (0) before change_roles")
+                    self.logger.debug(f"[DRIVER] Setting mode to UPDATE (0) before change_roles")
                     await self.dut.set_mode.call(sim, {"mode": 0})
-                    print(f"[DRIVER] Mode set to UPDATE (0)")
+                    self.logger.debug(f"[DRIVER] Mode set to UPDATE (0)")
                     cur_mode = 0
-                print(f"[DRIVER] Calling change_roles")
+                self.logger.debug(f"[DRIVER] Calling change_roles")
                 await self.dut.change_roles.call(sim, {})
-                print(f"[DRIVER] change_roles completed")
+                self.logger.debug(f"[DRIVER] change_roles completed")
              
                 continue
 
             if kind == "insert1" or kind == "insert2":
                 # Ensure we are in UPDATE mode
                 if cur_mode != 0:
-                    print(f"[DRIVER] Setting mode to UPDATE (0)")
+                    self.logger.debug(f"[DRIVER] Setting mode to UPDATE (0)")
                     await self.dut.set_mode.call(sim, {"mode": 0})
-                    print(f"[DRIVER] Mode set to UPDATE (0)")
+                    self.logger.debug(f"[DRIVER] Mode set to UPDATE (0)")
                     cur_mode = 0
 
             else:  # kind == "query"
                 # Switch to QUERY mode if necessary
                 if cur_mode != 1:
-                    print(f"[DRIVER] Setting mode to QUERY (1)")
+                    self.logger.debug(f"[DRIVER] Setting mode to QUERY (1)")
                     await self.dut.set_mode.call(sim, {"mode": 1})
-                    print(f"[DRIVER] Mode set to QUERY (1)")
+                    self.logger.debug(f"[DRIVER] Mode set to QUERY (1)")
                     cur_mode = 1
             
             if kind == "insert1":
-                print(f"[DRIVER] Calling fifo1.call with data={payload}")
+                self.logger.debug(f"[DRIVER] Calling fifo1.call with data={payload}")
                 await self.dut.fifo1.call(sim, {"data": payload})
-                print(f"[DRIVER] fifo1.call completed")
+                self.logger.debug(f"[DRIVER] fifo1.call completed")
             elif kind == "insert2":
-                print(f"[DRIVER] Calling fifo2.call with data={payload}")
+                self.logger.debug(f"[DRIVER] Calling fifo2.call with data={payload}")
                 await self.dut.fifo2.call(sim, {"data": payload})
-                print(f"[DRIVER] fifo2.call completed")
+                self.logger.debug(f"[DRIVER] fifo2.call completed")
             elif kind == "query1":
-                print(f"[DRIVER] Calling fifo1.call with data={payload}")
+                self.logger.debug(f"[DRIVER] Calling fifo1.call with data={payload}")
                 await self.dut.fifo1.call(sim, {"data": payload})
-                print(f"[DRIVER] fifo1.call completed")
+                self.logger.debug(f"[DRIVER] fifo1.call completed")
             elif kind == "query2":
-                print(f"[DRIVER] Calling fifo2.call with data={payload}")
+                self.logger.debug(f"[DRIVER] Calling fifo2.call with data={payload}")
                 await self.dut.fifo2.call(sim, {"data": payload})
-                print(f"[DRIVER] fifo2.call completed")
+                self.logger.debug(f"[DRIVER] fifo2.call completed")
             else:
                 raise ValueError(f"Unknown operation: {kind}")
 
     async def checker_process(self, sim):
         """Pulls *read_count* results and compares with the model."""
-        print(f"[CHECKER] Starting checker with {len(self.expected)} expected results")
+        self.logger.debug(f"[CHECKER] Starting checker with {len(self.expected)} expected results")
         while self.expected:
             # Randomised back-pressure on the result FIFO
             while random() >= 0.5:
-                print(f"[CHECKER] Adding back-pressure cycle")
+                self.logger.debug(f"[CHECKER] Adding back-pressure cycle")
                 await sim.tick()
-                print(f"[CHECKER] Back-pressure cycle complete")
+                self.logger.debug(f"[CHECKER] Back-pressure cycle complete")
             
-            print(f"[CHECKER] Calling read_count")
+            self.logger.debug(f"[CHECKER] Calling read_count")
             resp = await self.dut.read_count.call(sim)
             expected = self.expected.popleft()
-            print(f"[CHECKER] read_count completed with result {resp}, expected {expected}")
+            self.logger.debug(f"[CHECKER] read_count completed with result {resp}, expected {expected}")
             
             assert resp == expected
             if resp != {"count": 0}:
-                print(f"read_count: {resp['count']}")
+                self.logger.debug(f"read_count: {resp['count']}")
 
     # ------------------------------------------------------------------
     #  Top-level test
@@ -200,7 +203,7 @@ class TestRollingCountMinSketch(TestCaseWithSimulator):
         logger = logging.getLogger("count.rolling_cms")
         logger.setLevel(logging.DEBUG)
         logger.addHandler(file_handler)
-        print("[TEST] Creating RollingCountMinSketch instance")
+        self.logger.debug("[TEST] Creating RollingCountMinSketch instance")
         core = RollingCountMinSketch(
             depth            = self.depth,
             width            = self.width,
@@ -208,16 +211,16 @@ class TestRollingCountMinSketch(TestCaseWithSimulator):
             input_data_width = self.item_width,
             hash_params      = self.hash_params,
         )
-        print("[TEST] RollingCountMinSketch instance created")
+        self.logger.debug("[TEST] RollingCountMinSketch instance created")
         
-        print("[TEST] Creating SimpleTestCircuit")
+        self.logger.debug("[TEST] Creating SimpleTestCircuit")
         self.dut = SimpleTestCircuit(core)
-        print("[TEST] SimpleTestCircuit created")
+        self.logger.debug("[TEST] SimpleTestCircuit created")
 
-        print("[TEST] Starting simulation")
+        self.logger.debug("[TEST] Starting simulation")
         with self.run_simulation(self.dut) as sim:
-            print("[TEST] Adding driver process")
+            self.logger.debug("[TEST] Adding driver process")
             sim.add_testbench(self.driver_process)
-            print("[TEST] Adding checker process")
+            self.logger.debug("[TEST] Adding checker process")
             sim.add_testbench(self.checker_process)
-        print("[TEST] Simulation complete")
+        self.logger.debug("[TEST] Simulation complete")
