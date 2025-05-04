@@ -26,7 +26,7 @@ class TestCountHashTab(TestCaseWithSimulator):
         seed(42)
 
         # ── DUT parameters ────────────────────────────────────────────
-        self.size          = 128     # number of hash buckets
+        self.size          = 18     # number of hash buckets
         self.counter_width = 32
         self.data_width    = 32
 
@@ -89,13 +89,11 @@ class TestCountHashTab(TestCaseWithSimulator):
                 await sim.tick()
 
             if kind == "insert":
-                await self.dut.insert.call(sim, {"data": data})
-
+                await self.dut.insert.call_try(sim, {"data": data})
             elif kind == "query":
-                await self.dut.query_req.call(sim, {"data": data})
-
+                await self.dut.query_req.call_try(sim, {"data": data})
             else:                           # kind == "clear"
-                await self.dut.clear.call(sim, {})
+                await self.dut.clear.call_try(sim, {})
                 for idx in range(self.size):
                     await sim.tick()         # wait for clear to finish
 
@@ -107,7 +105,7 @@ class TestCountHashTab(TestCaseWithSimulator):
         inserting random back-pressure so responses queue up.
         """  
         while self.expected:
-            resp = await self.dut.query_resp.call(sim)
+            resp = await self.dut.query_resp.call_try(sim)
             if resp["valid"] == 0:
                 continue
             assert resp["count"] == self.expected.popleft()["count"]
