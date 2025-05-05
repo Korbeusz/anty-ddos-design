@@ -41,7 +41,7 @@ class TestCountMinSketch(TestCaseWithSimulator):
         self.model = [[0] * self.width for _ in range(self.depth)]
 
         # ── Random operation trace ────────────────────────────────
-        self.operation_count = 15_000
+        self.operation_count = 20_000
         #                  kind          payload
         #   ops[i] = ("insert"|"query"|"clear",  int | None)
         self.ops: list[tuple[str, int | None]] = []
@@ -83,13 +83,13 @@ class TestCountMinSketch(TestCaseWithSimulator):
                 await sim.tick()
 
             if kind == "insert":
-                await self.dut.insert.call(sim, {"data": data})
+                await self.dut.insert.call_try(sim, {"data": data})
 
             elif kind == "query":
-                await self.dut.query_req.call(sim, {"data": data})
+                await self.dut.query_req.call_try(sim, {"data": data})
 
             else:  # kind == "clear"
-                await self.dut.clear.call(sim, {})
+                await self.dut.clear.call_try(sim, {})
                 # Allow the DUT time to sweep the memory
                 for _ in range(self.width):
                     await sim.tick()
@@ -100,7 +100,7 @@ class TestCountMinSketch(TestCaseWithSimulator):
     async def checker_process(self, sim):
         """Pulls QUERY_RESP results and checks them against *expected*."""
         while self.expected:
-            resp = await self.dut.query_resp.call(sim)
+            resp = await self.dut.query_resp.call_try(sim)
             # If the RTL exposes a *valid* field use it; otherwise assume ready
             if resp["valid"] == 0:
                 continue  # back‑pressure the FIFO until a real response
