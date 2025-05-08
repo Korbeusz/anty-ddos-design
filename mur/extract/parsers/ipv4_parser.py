@@ -58,7 +58,7 @@ class IPv4Parser(Elaboratable):
             # Extract version and header_length from the first byte
             m.d.av_comb += parsed.version.eq(first_byte[4:8])  # Bits 4-7 (high nibble)
             m.d.av_comb += parsed.header_length.eq(first_byte[0:4])  # Bits 0-3 (low nibble)
-
+            
             # Calculate header length in bytes
             header_length_bytes = parsed.header_length * 4
 

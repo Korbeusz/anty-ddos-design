@@ -14,16 +14,6 @@ log = logging.HardwareLogger("test.construction")
 # ------------------------------------------------------------
 # Constants mirroring hardware enum values
 # ------------------------------------------------------------
-class EthProtoOut:
-    IPV4 = 1
-    IPV6 = 2
-    OTHER = 0
-
-class IpProtoOut:
-    ICMP = 1
-    TCP  = 2
-    UDP  = 3
-    OTHER = 0
 
 # ------------------------------------------------------------
 # DUT wrapper: Ethernet → Aligner → IPv4 → Aligner
@@ -221,12 +211,11 @@ def packet_to_expected_dout(pkt: bytes, eth: dict, ip: dict, chunk: int = 64):
         last = i == len(chunks) - 1
         eop_len = len(payload) % chunk if last else 0
         eop_len = chunk if last and eop_len == 0 and payload else eop_len
-
-        if i == 0:
-            proto_map = {1: IpProtoOut.ICMP, 6: IpProtoOut.TCP, 17: IpProtoOut.UDP}
-            next_proto = proto_map.get(ip["protocol"], IpProtoOut.OTHER)
-        else:
-            next_proto = 0
+        IpProtoOut = IPv4Parser.ProtoOut
+        
+        proto_map = {1: IpProtoOut.ICMP, 6: IpProtoOut.TCP, 17: IpProtoOut.UDP}
+        next_proto = proto_map.get(ip["protocol"], IpProtoOut.UNKNOWN)
+        
 
         dout.append({
             "data": bytes_to_int_le(ch),
@@ -242,7 +231,7 @@ def packet_to_expected_dout(pkt: bytes, eth: dict, ip: dict, chunk: int = 64):
 class TestEthernetIPv4Parser(TestCaseWithSimulator):
     def setup_method(self):
         seed(42)
-        pkts = rdpcap("example_pcaps/onepacket.pcapng")
+        pkts = rdpcap("example_pcaps/udp.pcap")
         self.inputs  = []
         self.exp_eth = []
         self.exp_ip  = []
@@ -280,7 +269,17 @@ class TestEthernetIPv4Parser(TestCaseWithSimulator):
             while random() > 0.7:
                 await sim.tick()
             got = await self.eptc.dout.call(sim)
+            if got != exp:
+                #compare the data
+                print(f"[dout] got {got['data']:x} exp {exp['data']:x} ")
+                #compare the end_of_packet
+                print(f"[dout] got {got['end_of_packet']} exp {exp['end_of_packet']} ")
+                #compare the end_of_packet_len
+                print(f"[dout] got {got['end_of_packet_len']} exp {exp['end_of_packet_len']} ")
+                #compare the next_proto
+                print(f"[dout] got {got['next_proto']} exp {exp['next_proto']} ")
             assert got == exp, f"dout mismatch: got {got} exp {exp}"
+            print(f"[dout] {got['data']:x} eop={got['end_of_packet']} ")
 
     async def _check_parsed(self, sim):
         for eth, ip in zip(self.exp_eth, self.exp_ip):
