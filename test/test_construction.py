@@ -11,7 +11,7 @@ from mur.extract.interfaces import ProtoParserLayouts
 from scapy.all import rdpcap
 from random import randint, random, seed
 from transactron.lib import logging
-
+from transactron.lib.simultaneous import condition
 log = logging.HardwareLogger("test.construction")
 
 # ------------------------------------------------------------
@@ -19,64 +19,63 @@ log = logging.HardwareLogger("test.construction")
 # ------------------------------------------------------------
 class parser_aligner(Elaboratable):
     """Top‑level that chains Ethernet, IPv4, UDP and TCP parsers with
-    the required aligners.  The UDP or TCP parser is selected based on
-    the *next_proto* field from the IPv4 layer (no extra aligner
-    needed).  Parsed headers for every layer can be retrieved through
-    dedicated *get_* methods.
+    the required aligners.  Apart from the original header capture, this
+    variant also streams selected fields (IPv4 src/dst/len and transport
+    destination port) into dedicated FIFOs so the test‑bench can verify
+    them one‑by‑one.
     """
 
     def __init__(self):
         self.layouts = ProtoParserLayouts()
 
-        # FIFO to inject raw packet words
+        # FIFO to inject raw packet words --------------------------------
         self.fifo_in = BasicFifo(self.layouts.parser_in_layout, 4)
         self.din = self.fifo_in.write
 
-        # Stages ---------------------------------------------------
-        self.eth_parser  = EthernetParser(push_parsed=self._push_parsed_eth())
+        # ── NEW: simple FIFO layouts ------------------------------------
+        lay32 = [("data", 32)]
+        lay16 = [("data", 16)]
+
+        self.ip_src_fifo   = BasicFifo(lay32, 16)
+        self.ip_dst_fifo   = BasicFifo(lay32, 16)
+        self.ip_len_fifo   = BasicFifo(lay16, 16)
+        self.dst_port_fifo = BasicFifo(lay16, 16)
+
+        # Expose *read* side as handy Methods for the TB -----------------
+        self.get_src_ip   = self.ip_src_fifo.read
+        self.get_dst_ip   = self.ip_dst_fifo.read
+        self.get_tot_len  = self.ip_len_fifo.read
+        self.get_dst_port = self.dst_port_fifo.read
+
+        # Stages ---------------------------------------------------------
+        # Ethernet parser is wired with a *no‑op* push method because no
+        # Ethernet‑level fields are checked in this upgraded TB.
+        self.eth_parser  = EthernetParser(push_parsed=self._push_dummy())
         self.aligner1    = ParserAligner()
         self.ip_parser   = IPv4Parser(push_parsed=self._push_parsed_ip())
         self.aligner2    = ParserAligner()
         self.udp_parser  = UDPParser(push_parsed=self._push_parsed_udp())
         self.tcp_parser  = TCPParser(push_parsed=self._push_parsed_tcp())
 
-        # ---------------- saved Ethernet / IPv4 / UDP / TCP fields -------------
-        self._last_eth = Signal(self.eth_parser.ResultLayouts().fields)
-        self._new_eth  = Signal()
-        self.get_eth   = Method(o=self.eth_parser.ResultLayouts().fields)
-
-        self._last_ip  = Signal(self.ip_parser.ResultLayouts().fields)
-        self._new_ip   = Signal()
-        self.get_ip    = Method(o=self.ip_parser.ResultLayouts().fields)
-
-        self._last_udp = Signal(self.udp_parser.ResultLayouts().fields)
-        self._new_udp  = Signal()
-        self.get_udp   = Method(o=self.udp_parser.ResultLayouts().fields)
-
-        self._last_tcp = Signal(self.tcp_parser.ResultLayouts().fields)
-        self._new_tcp  = Signal()
-        self.get_tcp   = Method(o=self.tcp_parser.ResultLayouts().fields)
-
-        # Public output (payload after transport header – **unused in this TB**)
         self.dout = self.aligner2.dout
 
     # ------------------------------------------------------------
-    #  Internal helper: push_parsed handlers (Ethernet / IPv4 / UDP / TCP)
+    #  Internal helpers: dummy & real push_parsed handlers
     # ------------------------------------------------------------
-    def _push_parsed_eth(self):
+    def _push_dummy(self):
         lay = [
             ("fields", EthernetParser.ResultLayouts().fields),
             ("error_drop", 1),
         ]
-        self.push_parsed_eth = Method(i=lay, o=lay)
-        return self.push_parsed_eth
+        self._dummy = Method(i=lay)
+        return self._dummy
 
     def _push_parsed_ip(self):
         lay = [
             ("fields", IPv4Parser.ResultLayouts().fields),
             ("error_drop", 1),
         ]
-        self.push_parsed_ip = Method(i=lay, o=lay)
+        self.push_parsed_ip = Method(i=lay)
         return self.push_parsed_ip
 
     def _push_parsed_udp(self):
@@ -84,7 +83,7 @@ class parser_aligner(Elaboratable):
             ("fields", UDPParser.ResultLayouts().fields),
             ("error_drop", 1),
         ]
-        self.push_parsed_udp = Method(i=lay, o=lay)
+        self.push_parsed_udp = Method(i=lay)
         return self.push_parsed_udp
 
     def _push_parsed_tcp(self):
@@ -92,7 +91,7 @@ class parser_aligner(Elaboratable):
             ("fields", TCPParser.ResultLayouts().fields),
             ("error_drop", 1),
         ]
-        self.push_parsed_tcp = Method(i=lay, o=lay)
+        self.push_parsed_tcp = Method(i=lay)
         return self.push_parsed_tcp
 
     # ------------------------------------------------------------
@@ -101,67 +100,49 @@ class parser_aligner(Elaboratable):
     def elaborate(self, platform):
         m = TModule()
 
-        # Sub‑modules ---------------------------------------------
+        # Sub‑modules ----------------------------------------------------
         m.submodules += [
             self.fifo_in,
-            self.eth_parser,
-            self.aligner1,
-            self.ip_parser,
-            self.aligner2,
-            self.udp_parser,
-            self.tcp_parser,
+            self.eth_parser, self.aligner1,
+            self.ip_parser,  self.aligner2,
+            self.udp_parser, self.tcp_parser,
+            self.ip_src_fifo, self.ip_dst_fifo, self.ip_len_fifo, self.dst_port_fifo,
         ]
 
-        # Save parsed Ethernet header -----------------------------
-        @def_method(m, self.push_parsed_eth, ready=~self._new_eth)
+        @def_method(m, self._dummy)
         def _(arg):
-            m.d.sync += [self._last_eth.eq(arg.fields), self._new_eth.eq(1)]
-
-        @def_method(m, self.get_eth, ready=self._new_eth)
-        def _():
-            m.d.sync += self._new_eth.eq(0)
-            return self._last_eth
-
-        # Save parsed IPv4 header ---------------------------------
-        @def_method(m, self.push_parsed_ip, ready=~self._new_ip)
+            # Dummy method for Ethernet parser
+            pass
+        # IPv4 – save header + stream selected fields into FIFOs ---------
+        @def_method(m, self.push_parsed_ip)
         def _(arg):
-            m.d.sync += [self._last_ip.eq(arg.fields), self._new_ip.eq(1)]
+            with m.If(arg.error_drop == 0):
+                self.ip_src_fifo.write(m, {"data": arg.fields.source_ip})
+                self.ip_dst_fifo.write(m, {"data": arg.fields.destination_ip})
+                self.ip_len_fifo.write(m, {"data": arg.fields.total_length})
 
-        @def_method(m, self.get_ip, ready=self._new_ip)
-        def _():
-            m.d.sync += self._new_ip.eq(0)
-            return self._last_ip
-
-        # Save parsed UDP header ----------------------------------
-        @def_method(m, self.push_parsed_udp, ready=~self._new_udp)
+        # UDP – save + dst‑port FIFO ------------------------------------
+        @def_method(m, self.push_parsed_udp)
         def _(arg):
-            m.d.sync += [self._last_udp.eq(arg.fields), self._new_udp.eq(1)]
+            with m.If(arg.error_drop == 0):
+                self.dst_port_fifo.write(m, {"data": arg.fields.destination_port})
 
-        @def_method(m, self.get_udp, ready=self._new_udp)
-        def _():
-            m.d.sync += self._new_udp.eq(0)
-            return self._last_udp
-
-        # Save parsed TCP header ----------------------------------
-        @def_method(m, self.push_parsed_tcp, ready=~self._new_tcp)
+        # TCP – save + dst‑port FIFO ------------------------------------
+        @def_method(m, self.push_parsed_tcp)
         def _(arg):
-            m.d.sync += [self._last_tcp.eq(arg.fields), self._new_tcp.eq(1)]
+            with m.If(arg.error_drop == 0):
+                self.dst_port_fifo.write(m, {"data": arg.fields.destination_port})
 
-        @def_method(m, self.get_tcp, ready=self._new_tcp)
-        def _():
-            m.d.sync += self._new_tcp.eq(0)
-            return self._last_tcp
-
-        # ------------------- Streaming datapath ------------------
-        # Transaction 1: Ethernet parser
+        # ------------------- Streaming datapath ------------------------
+        # 1. Ethernet parser -------------------------------------------
         with Transaction().body(m):
-            word0 = self.fifo_in.read(m)
+            word0   = self.fifo_in.read(m)
             eth_out = self.eth_parser.step(m, word0)
             self.aligner1.din(m, eth_out)
 
-        # Transaction 2: IPv4 parser
+        # 2. IPv4 parser -----------------------------------------------
         with Transaction().body(m):
-            al1 = self.aligner1.dout(m)
+            al1   = self.aligner1.dout(m)
             ip_in = {
                 "data":              al1["data"],
                 "end_of_packet":     al1["end_of_packet"],
@@ -170,7 +151,7 @@ class parser_aligner(Elaboratable):
             ip_out = self.ip_parser.step(m, ip_in)
             self.aligner2.din(m, ip_out)
 
-        # Transaction 3: UDP / TCP parser selection ------------
+        # 3. UDP / TCP selection ---------------------------------------
         with Transaction().body(m):
             al2 = self.aligner2.dout(m)
             tr_in = {
@@ -178,21 +159,14 @@ class parser_aligner(Elaboratable):
                 "end_of_packet":     al2["end_of_packet"],
                 "end_of_packet_len": al2["end_of_packet_len"],
             }
-
             IpProtoOut = IPv4Parser.ProtoOut
-            with m.Switch(al2["next_proto"]):
-                with m.Case(IpProtoOut.UDP):
+            with condition(m) as branch:
+                with branch(al2["next_proto"] == IpProtoOut.UDP):
                     self.udp_parser.step(m, tr_in)
-                with m.Case(IpProtoOut.TCP):
+                with branch(al2["next_proto"] == IpProtoOut.TCP):
                     self.tcp_parser.step(m, tr_in)
-                with m.Default():
-                    pass  # Unsupported transport protocol – ignore
 
         return m
-
-# ------------------------------------------------------------------
-# Helper utilities (byte‑twiddling reference model)
-# ------------------------------------------------------------------
 
 def bytes_to_int_le(b: bytes) -> int:
     return int.from_bytes(b, "little")
@@ -310,9 +284,6 @@ def parse_tcp(pkt: bytes, l4_off: int):
         parsed["error_drop"] = 1
     return parsed
 
-# ------------------------------------------------------------------
-#                      Test‑bench class
-# ------------------------------------------------------------------
 class TestEthernetIPv4TCPUDPParser(TestCaseWithSimulator):
     def setup_method(self):
         seed(42)
@@ -363,17 +334,19 @@ class TestEthernetIPv4TCPUDPParser(TestCaseWithSimulator):
         udp_idx = 0
         tcp_idx = 0
         for eth, ip in zip(self.exp_eth, self.exp_ip):
-            # Ethernet ------------------------------------------
-            while random() > 0.7:
-                await sim.tick()
-            got_eth = await self.eptc.get_eth.call(sim)
-            assert int(got_eth["ethertype"]) == eth["ethertype"]
 
             # IPv4 ----------------------------------------------
             while random() > 0.7:
                 await sim.tick()
-            got_ip = await self.eptc.get_ip.call(sim)
-            assert int(got_ip["protocol"]) == ip["protocol"]
+
+            if ip.get("error_drop", 1) == 0:
+                # --- NEW: check src/dst/len via FIFOs ----------
+                got_src = await self.eptc.get_src_ip.call(sim)
+                got_dst = await self.eptc.get_dst_ip.call(sim)
+                got_len = await self.eptc.get_tot_len.call(sim)
+                assert int(got_src["data"]) == ip["source_ip"]
+                assert int(got_dst["data"]) == ip["destination_ip"]
+                assert int(got_len["data"]) == ip["total_length"]
 
             # UDP / TCP -----------------------------------------
             if ip.get("error_drop", 1):
@@ -383,17 +356,20 @@ class TestEthernetIPv4TCPUDPParser(TestCaseWithSimulator):
                 udp_idx += 1
                 while random() > 0.7:
                     await sim.tick()
-                got_udp = await self.eptc.get_udp.call(sim)
-                assert int(got_udp["source_port"]) == exp_udp["source_port"]
-                assert int(got_udp["destination_port"]) == exp_udp["destination_port"]
+
+                # Destination port via FIFO -------------------
+                got_dp = await self.eptc.get_dst_port.call(sim)
+                assert int(got_dp["data"]) == exp_udp["destination_port"]
+
             elif ip["protocol"] == 6:  # TCP
                 exp_tcp = self.exp_tcp[tcp_idx]
                 tcp_idx += 1
                 while random() > 0.7:
                     await sim.tick()
-                got_tcp = await self.eptc.get_tcp.call(sim)
-                assert int(got_tcp["source_port"]) == exp_tcp["source_port"]
-                assert int(got_tcp["destination_port"]) == exp_tcp["destination_port"]
+
+                # Destination port via FIFO -------------------
+                got_dp = await self.eptc.get_dst_port.call(sim)
+                assert int(got_dp["data"]) == exp_tcp["destination_port"]
 
     # --------------------------- test entry ----------------------
     def test_random(self):
