@@ -324,12 +324,15 @@ class TestEthernetIPv4TCPUDPParser(TestCaseWithSimulator):
                     self.exp_tcp.append(parse_tcp(raw, l4_off))
 
     # ------------ driver / checker processes ---------------------
+    # Only move to the next word if the res in not None
     async def _drive_din(self, sim):
-        for word in self.inputs:
-            #while random() > 0.7:
-            #    await sim.tick()
-            await self.eptc.din.call(sim, word)
-        print("Self.inputs", len(self.inputs))
+        while self.inputs:
+            res = await self.eptc.din.call_try(sim, self.inputs[0])
+            if res is not None:
+                self.inputs.pop(0)
+            else:
+                print("Waiting for FIFO space")
+
 
     async def _check_parsed(self, sim):
         udp_idx = 0
