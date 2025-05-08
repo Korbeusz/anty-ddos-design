@@ -326,9 +326,10 @@ class TestEthernetIPv4TCPUDPParser(TestCaseWithSimulator):
     # ------------ driver / checker processes ---------------------
     async def _drive_din(self, sim):
         for word in self.inputs:
-            while random() > 0.7:
-                await sim.tick()
+            #while random() > 0.7:
+            #    await sim.tick()
             await self.eptc.din.call(sim, word)
+        print("Self.inputs", len(self.inputs))
 
     async def _check_parsed(self, sim):
         udp_idx = 0
@@ -336,38 +337,46 @@ class TestEthernetIPv4TCPUDPParser(TestCaseWithSimulator):
         for eth, ip in zip(self.exp_eth, self.exp_ip):
 
             # IPv4 ----------------------------------------------
-            while random() > 0.7:
-                await sim.tick()
+            #while random() > 0.7:
+            #    await sim.tick()
 
             if ip.get("error_drop", 1) == 0:
                 # --- NEW: check src/dst/len via FIFOs ----------
-                got_src = await self.eptc.get_src_ip.call(sim)
-                got_dst = await self.eptc.get_dst_ip.call(sim)
-                got_len = await self.eptc.get_tot_len.call(sim)
+                got_src, got_dst, got_len = await CallTrigger(sim)\
+                    .call(self.eptc.get_src_ip).call(self.eptc.get_dst_ip).call(self.eptc.get_tot_len).until_all_done()
                 assert int(got_src["data"]) == ip["source_ip"]
                 assert int(got_dst["data"]) == ip["destination_ip"]
                 assert int(got_len["data"]) == ip["total_length"]
 
-            # UDP / TCP -----------------------------------------
+            # Destination‑port check moved to separate process
+            if ip.get("error_drop", 1):
+                continue
+            if ip["protocol"] == 17:  # UDP
+                udp_idx += 1
+            elif ip["protocol"] == 6:  # TCP
+                tcp_idx += 1
+
+    # NEW --------------------------------------------------------
+    async def _check_dst_port(self, sim):
+        """Independent process that checks destination ports from the
+        dedicated FIFO, one‑by‑one, in the original packet order."""
+        udp_idx = 0
+        tcp_idx = 0
+        for ip in self.exp_ip:
             if ip.get("error_drop", 1):
                 continue
             if ip["protocol"] == 17:  # UDP
                 exp_udp = self.exp_udp[udp_idx]
                 udp_idx += 1
-                while random() > 0.7:
-                    await sim.tick()
-
-                # Destination port via FIFO -------------------
+                #while random() > 0.7:
+                #    await sim.tick()
                 got_dp = await self.eptc.get_dst_port.call(sim)
                 assert int(got_dp["data"]) == exp_udp["destination_port"]
-
             elif ip["protocol"] == 6:  # TCP
                 exp_tcp = self.exp_tcp[tcp_idx]
                 tcp_idx += 1
-                while random() > 0.7:
-                    await sim.tick()
-
-                # Destination port via FIFO -------------------
+                #while random() > 0.7:
+                #    await sim.tick()
                 got_dp = await self.eptc.get_dst_port.call(sim)
                 assert int(got_dp["data"]) == exp_tcp["destination_port"]
 
@@ -377,3 +386,4 @@ class TestEthernetIPv4TCPUDPParser(TestCaseWithSimulator):
         with self.run_simulation(self.eptc) as sim:
             sim.add_testbench(self._drive_din)
             sim.add_testbench(self._check_parsed)
+            sim.add_testbench(self._check_dst_port)
