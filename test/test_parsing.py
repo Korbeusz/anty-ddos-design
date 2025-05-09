@@ -29,7 +29,7 @@ class parser_aligner(Elaboratable):
         self.layouts = ProtoParserLayouts()
 
         # FIFO to inject raw packet words --------------------------------
-        self.fifo_in = BasicFifo(self.layouts.parser_in_layout, 4)
+        self.fifo_in = BasicFifo(self.layouts.parser_in_layout, 16)
         self.din = self.fifo_in.write
 
         # ── NEW: simple FIFO layouts ------------------------------------
@@ -139,6 +139,7 @@ class parser_aligner(Elaboratable):
             word0   = self.fifo_in.read(m)
             eth_out = self.eth_parser.step(m, word0)
             self.aligner1.din(m, eth_out)
+            log.debug(m,True, "Transaction 1")
 
         # 2. IPv4 parser -----------------------------------------------
         with Transaction().body(m):
@@ -150,6 +151,7 @@ class parser_aligner(Elaboratable):
             }
             ip_out = self.ip_parser.step(m, ip_in)
             self.aligner2.din(m, ip_out)
+            log.debug(m,True, "Transaction 2")
 
         # 3. UDP / TCP selection ---------------------------------------
         with Transaction().body(m):
@@ -165,6 +167,7 @@ class parser_aligner(Elaboratable):
                     self.udp_parser.step(m, tr_in)
                 with branch(al2["next_proto"] == IpProtoOut.TCP):
                     self.tcp_parser.step(m, tr_in)
+            log.debug(m,True, "Transaction 3")
 
         return m
 
@@ -326,12 +329,15 @@ class TestEthernetIPv4TCPUDPParser(TestCaseWithSimulator):
     # ------------ driver / checker processes ---------------------
     # Only move to the next word if the res in not None
     async def _drive_din(self, sim):
+        print("length of inputs: ", len(self.inputs))
         while self.inputs:
+            if random() > 0.7:
+                await sim.tick()
             res = await self.eptc.din.call_try(sim, self.inputs[0])
             if res is not None:
                 self.inputs.pop(0)
             else:
-                print("Waiting for FIFO space")
+                print("din waiting")
 
 
     async def _check_parsed(self, sim):
@@ -340,8 +346,8 @@ class TestEthernetIPv4TCPUDPParser(TestCaseWithSimulator):
         for eth, ip in zip(self.exp_eth, self.exp_ip):
 
             # IPv4 ----------------------------------------------
-            #while random() > 0.7:
-            #    await sim.tick()
+            while random() > 0.7:
+                await sim.tick()
 
             if ip.get("error_drop", 1) == 0:
                 # --- NEW: check src/dst/len via FIFOs ----------
@@ -371,15 +377,15 @@ class TestEthernetIPv4TCPUDPParser(TestCaseWithSimulator):
             if ip["protocol"] == 17:  # UDP
                 exp_udp = self.exp_udp[udp_idx]
                 udp_idx += 1
-                #while random() > 0.7:
-                #    await sim.tick()
+                while random() > 0.7:
+                    await sim.tick()
                 got_dp = await self.eptc.get_dst_port.call(sim)
                 assert int(got_dp["data"]) == exp_udp["destination_port"]
             elif ip["protocol"] == 6:  # TCP
                 exp_tcp = self.exp_tcp[tcp_idx]
                 tcp_idx += 1
-                #while random() > 0.7:
-                #    await sim.tick()
+                while random() > 0.7:
+                    await sim.tick()
                 got_dp = await self.eptc.get_dst_port.call(sim)
                 assert int(got_dp["data"]) == exp_tcp["destination_port"]
 
