@@ -13,7 +13,7 @@ from random import randint, random, seed
 from transactron.lib import logging
 from transactron.lib.simultaneous import condition
 log = logging.HardwareLogger("test.construction")
-
+CYCLE_TIME = 0.01
 # ------------------------------------------------------------
 # DUT wrapper: Ethernet → Aligner → IPv4 → Aligner → UDP/TCP
 # ------------------------------------------------------------
@@ -297,13 +297,14 @@ class TestEthernetIPv4TCPUDPParser(TestCaseWithSimulator):
         self.exp_ip    = []
         self.exp_udp   = []  # Expected UDP headers in arrival order
         self.exp_tcp   = []  # Expected TCP headers in arrival order
-
+        base_sc = pkts[0].time
         for sc in pkts:
             raw = bytes(sc)
             eth = parse_ethernet(raw)
             ip  = parse_ipv4(raw, eth.get("header_len", 0)) if eth["ethertype"] == 0x0800 else {"error_drop":1}
 
             # --- push raw words into FIFO -----------------------
+            pkt_ts = sc.time - base_sc
             in_chunks = split_chunks(raw, 64)
             for i, ch in enumerate(in_chunks):
                 last = i == len(in_chunks) - 1
@@ -313,6 +314,7 @@ class TestEthernetIPv4TCPUDPParser(TestCaseWithSimulator):
                     "data": bytes_to_int_le(ch),
                     "end_of_packet": last,
                     "end_of_packet_len": eop_len,
+                    "timestamp": pkt_ts,
                 })
 
             # Expected headers -----------------------------------
@@ -329,11 +331,19 @@ class TestEthernetIPv4TCPUDPParser(TestCaseWithSimulator):
     # ------------ driver / checker processes ---------------------
     # Only move to the next word if the res in not None
     async def _drive_din(self, sim):
+        cycle = 0
         print("length of inputs: ", len(self.inputs))
         while self.inputs:
-            if random() > 0.7:
+            t_sim = cycle * CYCLE_TIME
+
+            if t_sim < self.inputs[0]["timestamp"]:
                 await sim.tick()
-            res = await self.eptc.din.call_try(sim, self.inputs[0])
+                cycle += 1
+                continue
+            
+            word = {k: v for k, v in self.inputs[0].items() if k != "timestamp"}
+            res = await self.eptc.din.call_try(sim, word)
+            cycle += 1
             if res is not None:
                 self.inputs.pop(0)
             else:

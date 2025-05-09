@@ -1,24 +1,34 @@
 from __future__ import annotations
-# RollingCountMinSketch – request-flagged transactions (idiomatic “with” form)
-from transactron.lib import logging
+
 from amaranth import *
-from amaranth.lib.data import StructLayout
 from transactron import *
-from transactron.core import TModule, Transaction
-from transactron.lib import BasicFifo
+from transactron import TModule, def_method
 
 from mur.count.CountMinSketch import CountMinSketch
-log = logging.HardwareLogger("count.rolling_cms")
-
 
 __all__ = ["RollingCountMinSketch"]
 
 
 class RollingCountMinSketch(Elaboratable):
+    """Triple‑buffered, rolling Count‑Min Sketch.
 
-    # ------------------------------------------------------------------ #
-    #  Constructor                                                       #
-    # ------------------------------------------------------------------ #
+    Roles of the three internal sketches (``cms0``‒``cms2``):
+
+    * **UPDATE**  – receives *insert* transactions while the module is in
+      *update* mode.
+    * **QUERY**   – serves *query* transactions while the module is in
+      *query* mode.
+    * **CLEAR**   – is being scrubbed to zero in the background.
+
+    ``change_roles`` rotates the roles forward (UPDATE → QUERY → CLEAR →
+    UPDATE …) and immediately triggers *clear* on the sketch that *was*
+    QUERY, without disturbing an on‑going sweep.  The finished CLEAR
+    sketch becomes the next UPDATE.
+    """
+
+    # ------------------------------------------------------------------
+    #  Constructor
+    # ------------------------------------------------------------------
     def __init__(
         self,
         *,
@@ -28,19 +38,18 @@ class RollingCountMinSketch(Elaboratable):
         input_data_width: int,
         hash_params: list[tuple[int, int]] | None = None,
     ) -> None:
-        if depth < 1:
-            raise ValueError("depth must be ≥ 1")
-
-        # Public parameters ---------------------------------------------
-        self.depth         = depth
-        self.width         = width
+        self.depth = depth
+        self.width = width
         self.counter_width = counter_width
-        self.item_width    = input_data_width
+        self.item_width = input_data_width
 
-        self.set_mode     = Method(i=[("mode", 1)])   # 0 = UPDATE, 1 = QUERY
-        self.change_roles = Method()                  # swap active/stand-by
+        # ── Public Transactron API ────────────────────────────────────
+        self.set_mode     = Method(i=[("mode", 1)])     # 0 = UPDATE, 1 = QUERY
+        self.change_roles = Method()                      # rotate roles
+        self.input        = Method(i=[("data", self.item_width)])
+        self.output       = Method(o=[("count", self.counter_width), ("valid", 1)])
 
-        # Internal sketches (ping-pong) ---------------------------------
+        # ── Three internal sketches ──────────────────────────────────
         self._cms0 = CountMinSketch(
             depth            = depth,
             width            = width,
@@ -55,59 +64,75 @@ class RollingCountMinSketch(Elaboratable):
             input_data_width = self.item_width,
             hash_params      = hash_params,
         )
+        self._cms2 = CountMinSketch(
+            depth            = depth,
+            width            = width,
+            counter_width    = counter_width,
+            input_data_width = self.item_width,
+            hash_params      = hash_params,
+        )
 
-        self.input  = Method(i=[("data", self.item_width)])  # input data
-        # Result FIFO ---------------------------------------------------
-        self.output = Method(o=[("count", self.counter_width),("valid", 1)])  # output data
-        # Control / status regs ----------------------------------------
-        self._active_sel   = Signal(1, init=0)  # 0 → cms0 active, 1 → cms1
-        self._mode         = Signal(1, init=0)  # 0 → UPDATE, 1 → QUERY
-        
-    # ------------------------------------------------------------------ #
-    #  Elaborate                                                         #
-    # ------------------------------------------------------------------ #
+        # ── Role bookkeeping ─────────────────────────────────────────
+        # _head == index (0‒2) of the current UPDATE sketch.
+        self._head = Signal(range(3), init=0)
+        self._mode = Signal(1, init=0)   # 0 = UPDATE, 1 = QUERY
+
+    # ------------------------------------------------------------------
+    #  Elaborate
+    # ------------------------------------------------------------------
     def elaborate(self, platform):
         m = TModule()
-        m.submodules += [self._cms0, self._cms1]
-        
+        m.submodules += [self._cms0, self._cms1, self._cms2]
 
-        @def_method(m,self.input)
-        def _input(data):
-            with m.Switch(Cat(self._active_sel, self._mode)):
-                with m.Case(0):
-                    self._cms0.insert(m, data=data)
-                with m.Case(1):
-                    self._cms1.insert(m, data=data)
-                with m.Case(2):
-                    self._cms0.query_req(m, data=data)
-                with m.Case(3):
-                    self._cms1.query_req(m, data=data)
-        
-        output_valid = Signal(1)
-        output_count = Signal(self.counter_width)
-        @def_method(m,self.output)
-        def _output():
-            res0 = self._cms0.query_resp(m)
-            res1 = self._cms1.query_resp(m)
+        # --------------------------------------------------  INPUT
+        @def_method(m, self.input)
+        def _(data):
+            with m.If(self._mode == 0):            # ── UPDATE mode
+                with m.Switch(self._head):
+                    with m.Case(0): self._cms0.insert(m, data=data)
+                    with m.Case(1): self._cms1.insert(m, data=data)
+                    with m.Case(2): self._cms2.insert(m, data=data)
+            with m.Else():                         # ── QUERY mode
+                # query_idx = (head + 1) % 3
+                with m.Switch(self._head):
+                    with m.Case(0): self._cms1.query_req(m, data=data)
+                    with m.Case(1): self._cms2.query_req(m, data=data)
+                    with m.Case(2): self._cms0.query_req(m, data=data)
+
+        # --------------------------------------------------  OUTPUT
+        @def_method(m, self.output)
+        def _():
+            r0 = self._cms0.query_resp(m)
+            r1 = self._cms1.query_resp(m)
+            r2 = self._cms2.query_resp(m)
+
+            valid = Signal(1)
+            count = Signal(self.counter_width)
+
+            # One – and only one – sketch raises *valid* at a time.
             m.d.comb += [
-                output_valid.eq(res0["valid"] | res1["valid"]),
-                output_count.eq(Mux(res0["valid"], res0["count"], res1["count"]))
+                valid.eq(r0["valid"] | r1["valid"] | r2["valid"]),
+                count.eq(Mux(r0["valid"], r0["count"],
+                              Mux(r1["valid"], r1["count"], r2["count"]))),
             ]
-            return {"count": output_count, "valid": output_valid}
- 
+            return {"count": count, "valid": valid}
 
+        # --------------------------------------------------  CHANGE_ROLES
         @def_method(m, self.change_roles)
         def _():
-            m.d.sync += self._active_sel.eq(~self._active_sel)
-            with m.If(self._active_sel == 0):
-                self._cms0.clear(m)
-            with m.Else():
-                self._cms1.clear(m)   
+            cur_query = (self._head + 1) % 3        # sketch that was QUERY
+            # Advance roles
+            m.d.sync += self._head.eq((self._head + 2) % 3)
 
+            # Kick off CLEAR on the sketch that *was* QUERY
+            with m.Switch(cur_query):
+                with m.Case(0): self._cms0.clear(m)
+                with m.Case(1): self._cms1.clear(m)
+                with m.Case(2): self._cms2.clear(m)
+
+        # --------------------------------------------------  SET_MODE
         @def_method(m, self.set_mode)
-        def _set_mode(mode):
+        def _(mode):
             m.d.sync += self._mode.eq(mode)
-
-     
 
         return m
