@@ -3,7 +3,7 @@ from transactron.lib import logging
 from amaranth import *
 from amaranth.utils import ceil_log2
 from transactron import Method, def_method, TModule
-log = logging.HardwareLogger("extract.aligner")
+log = logging.HardwareLogger("count.VolCounter")
 __all__ = ["VolCounter"]
 
 
@@ -54,6 +54,7 @@ class VolCounter(Elaboratable):
                 m.d.sync += acc.eq(acc + data)
             with m.Else():
                 m.d.sync += acc.eq(data)
+            log.debug(m, True, "acc {:d} + {:d} = {:d}", acc, data, acc + data)
                     
 
         
