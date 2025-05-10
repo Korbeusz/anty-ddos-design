@@ -21,8 +21,7 @@ from scapy.all import rdpcap, wrpcap, PcapReader   # noqa: F401
 #    Returns seconds (float) since epoch or since 0, as you prefer.
 # ---------------------------------------------------------------------------
 def time_func(idx: int) -> float:
-    """Example: evenly spaced 10 ms steps."""
-    return min(idx * 0.01, 0.03)
+    return idx * 0.00005
 # ---------------------------------------------------------------------------
 
 

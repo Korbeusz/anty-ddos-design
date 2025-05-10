@@ -39,6 +39,9 @@ build/
 benchmark.json
 
 # Pcap files 
+
 *.pcap
+
 *.log
 
+*.pcapng

@@ -13,7 +13,7 @@ from random import randint, random, seed
 from transactron.lib import logging
 from transactron.lib.simultaneous import condition
 log = logging.HardwareLogger("test.construction")
-CYCLE_TIME = 0.01
+CYCLE_TIME = 0.0005
 # ------------------------------------------------------------
 # DUT wrapper: Ethernet → Aligner → IPv4 → Aligner → UDP/TCP
 # ------------------------------------------------------------
@@ -290,7 +290,8 @@ def parse_tcp(pkt: bytes, l4_off: int):
 class TestEthernetIPv4TCPUDPParser(TestCaseWithSimulator):
     def setup_method(self):
         seed(42)
-        pkts = rdpcap("example_pcaps/tcp_udp.pcapng")
+        pkts = rdpcap("example_pcaps/flows.pcap")
+        print("Reading done")
 
         self.inputs    = []
         self.exp_eth   = []
