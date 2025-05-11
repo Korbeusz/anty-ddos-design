@@ -46,7 +46,7 @@ class RollingCountMinSketch(Elaboratable):
         # ── Public Transactron API ────────────────────────────────────
         self.set_mode     = Method(i=[("mode", 1)])     # 0 = UPDATE, 1 = QUERY
         self.change_roles = Method()                      # rotate roles
-        self.input        = Method(i=[("data", self.item_width)])
+        self.input        = Method(i=[("data", self.item_width)],o=[("mode", 1)])
         self.output       = Method(o=[("count", self.counter_width), ("valid", 1)])
 
         # ── Three internal sketches ──────────────────────────────────
@@ -98,6 +98,7 @@ class RollingCountMinSketch(Elaboratable):
                     with m.Case(0): self._cms1.query_req(m, data=data)
                     with m.Case(1): self._cms2.query_req(m, data=data)
                     with m.Case(2): self._cms0.query_req(m, data=data)
+            return {"mode": self._mode}
 
         # --------------------------------------------------  OUTPUT
         @def_method(m, self.output)

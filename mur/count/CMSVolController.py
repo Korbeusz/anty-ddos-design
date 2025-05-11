@@ -27,11 +27,13 @@ transactions stall automatically until every invoked Method is *ready*.
 from amaranth import *
 from transactron import *
 from transactron.core import Transaction
+from transactron.core import *
 from transactron.lib.fifo import BasicFifo
-
+from transactron.lib.simultaneous import condition
 from mur.count.RollingCountMinSketch import RollingCountMinSketch
 from mur.count.VolCounter import VolCounter
-
+from transactron.lib import logging
+log = logging.HardwareLogger("test.cmsvolcontroller")
 __all__ = ["CMSVolController"]
 
 
@@ -70,9 +72,15 @@ class CMSVolController(Elaboratable):
         self.push_s = self._fifo_s.write   # 16‑bit volume sample
 
         # ── Egress FIFO for RCMS query results -----------------------------
-        out_lay = [("data", counter_width)]
+        out_lay = [("data", 32)]
         self._fifo_out = BasicFifo(out_lay, fifo_depth)
         self.pop_count = self._fifo_out.read   # public *read* for estimates
+
+        self._insert_requested = Signal(32)
+        self._query_requested = Signal(32)
+        self._insert_received = Signal(32)
+        self._query_received = Signal(32)
+
 
         # ── Sub‑modules ----------------------------------------------------
         self.rcms = RollingCountMinSketch(
@@ -103,13 +111,20 @@ class CMSVolController(Elaboratable):
         # ------------------------------------------------------------
         # 1. Data path — pop A/B/S; insert OR query CMS; update VC
         # ------------------------------------------------------------
+        self._current_mode = Signal(1)
         with Transaction().body(m):
             a = self._fifo_a.read(m)            # low  word
             b = self._fifo_b.read(m)            # high word
             s = self._fifo_s.read(m)            # volume sample
 
-            self.rcms.input(m, data=Cat(a["data"], b["data"]))
+            self._current_mode = self.rcms.input(m, data=Cat(a["data"], b["data"]))["mode"]
+            with m.If(self._current_mode == 0):
+                m.d.sync += self._insert_requested.eq(self._insert_requested + 1)
+            with m.Else():
+                m.d.sync += self._query_requested.eq(self._query_requested + 1)
             self.vcnt.add_sample(m, data=s["data"])
+            #log a, b, s values
+            log.debug(m, True, "Input happens current_mode {:d} _insert_requested {:d}", self._current_mode, self._insert_requested)
 
         # ------------------------------------------------------------
         # 2. Once per *window* — pull VC result → switch RCMS roles/mode
@@ -119,13 +134,30 @@ class CMSVolController(Elaboratable):
             self.rcms.set_mode(m, mode=res["mode"])
             with m.If(res["mode"] == 0):
                 self.rcms.change_roles(m)
+            log.debug(m, True, "RCMS mode {:d} → {:d}", self._current_mode, res["mode"])
+            
 
         # ------------------------------------------------------------
         # 3. RCMS query responses → outbound FIFO (gated by *valid*)
         # ------------------------------------------------------------
+        self._inserts_difference = Signal(32)
+        m.d.comb += self._inserts_difference.eq(self._insert_requested - self._insert_received)
+        self._all_query_received = Signal(1)
+        m.d.comb += self._all_query_received.eq(self._query_requested == self._query_received)
+        self._query_decision = Signal(32)
+        self._out_fifo_input = Signal(32)
         with Transaction().body(m):
             q = self.rcms.output(m)
-            with m.If(q["valid"]):
-                self._fifo_out.write(m, {"data": q["count"]})
+            log.debug(m, True, " _inserts_difference {:d}, _all_query_received {:d}", self._inserts_difference, self._all_query_received)
+            m.d.comb += self._out_fifo_input.eq(2323)
+            with m.If(self._all_query_received & self._inserts_difference):
+                m.d.comb += self._out_fifo_input.eq(self._inserts_difference)
+                m.d.sync += self._insert_received.eq(self._insert_requested)
+            with m.If(~self._all_query_received & q["valid"]):
+                m.d.sync += self._query_received.eq(self._query_received + 1)
+                m.d.comb += self._out_fifo_input.eq(Mux(q["count"] > 0,1,0))
+            self._fifo_out.write(m, {"data": self._out_fifo_input})
+            
+            
 
         return m

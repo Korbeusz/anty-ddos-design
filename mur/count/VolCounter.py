@@ -54,7 +54,7 @@ class VolCounter(Elaboratable):
                 m.d.sync += acc.eq(acc + data)
             with m.Else():
                 m.d.sync += acc.eq(data)
-            log.debug(m, True, "acc {:d} + {:d} = {:d}", acc, data, acc + data)
+            #log.debug(m, True, "acc {:d} + {:d} = {:d}", acc, data, acc + data)
                     
 
         
