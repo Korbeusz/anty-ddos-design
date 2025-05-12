@@ -68,7 +68,8 @@ class CMSVolController(Elaboratable):
         self._fifo_dip = BasicFifo(lay32, fifo_depth)
         self._fifo_dport = BasicFifo(lay16, fifo_depth)
         self._fifo_len = BasicFifo(lay16, fifo_depth)
-
+        self._fifo_out = BasicFifo(lay32, fifo_depth)
+        self.out = self._fifo_out.read
         # Public *write* handles so outer modules can inject data
         self.push_a = self._fifo_sip.write   # 32‑bit word, low
         self.push_b = self._fifo_dip.write   # 32‑bit word, high
@@ -80,8 +81,6 @@ class CMSVolController(Elaboratable):
         self._insert_received = Signal(32)
         self._query_received = Signal(32)
 
-        outlay = [("data", 32), ("valid", 1)]
-        self.out = Method(o=outlay)
         # ── Sub‑modules ----------------------------------------------------
         self.rcms_sipdip = RollingCountMinSketch(
             depth            = depth,
@@ -118,7 +117,7 @@ class CMSVolController(Elaboratable):
 
         # Register every sub‑block so the simulator/net‑list sees them
         m.submodules += [
-            self._fifo_sip,self._fifo_dip,self._fifo_dport,self._fifo_len,
+            self._fifo_sip,self._fifo_dip,self._fifo_dport,self._fifo_len,self._fifo_out,
             self.vcnt, self.rcms_sipdip, self.rcms_dportdip, self.rcms_siplen,
         ]
 
@@ -168,8 +167,7 @@ class CMSVolController(Elaboratable):
         self._query_decision = Signal(32)
         self._out = Signal(32)
         self._out_valid = Signal(1)
-        @def_method(m, self.out)
-        def _():
+        with Transaction().body(m):
             q1 = self.rcms_sipdip.output(m)
             q2 = self.rcms_dportdip.output(m)
             q3 = self.rcms_siplen.output(m)
@@ -184,7 +182,8 @@ class CMSVolController(Elaboratable):
                 m.d.comb += self._out_valid.eq(1)
                 m.d.sync += self._query_received.eq(self._query_received + 1)
                 m.d.comb += self._out.eq(Mux(q1["count"] + q2["count"] + q3["count"] > self.discover_threshold,1,0))
-            return {"data": self._out, "valid": self._out_valid}
+            with m.If(self._out_valid):
+                self._fifo_out.write(m, {"data": self._out})
             
             
 

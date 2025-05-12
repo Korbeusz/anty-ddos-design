@@ -62,14 +62,18 @@ class ParserCMSVol(Elaboratable):
         volume_threshold: int = 100_000,
         discard_threshold: int = 0,
         cms_fifo_depth: int = 16,
+        fifo_output_depth: int = 1024,
     ) -> None:
         self.params = Params()
         layouts = ProtoParserLayouts()
 
         # -------------------- Ingress FIFO -----------------------------
+        self._fifo_parsing_in = BasicFifo(layouts.parser_in_layout, fifo_depth_in)
+        self._fifo_output_unfiltered = BasicFifo(layouts.parser_in_layout, fifo_output_depth)
+        self._fifo_output_filtered = BasicFifo(layouts.parser_in_layout, fifo_output_depth)
         self._fifo_in = BasicFifo(layouts.parser_in_layout, fifo_depth_in)
         self.din = self._fifo_in.write       # external handle
-
+        self.dout = self._fifo_output_filtered.read       # external handle
         # --------------------- Parsers & helpers -----------------------
         self._eth_parser  = EthernetParser(push_parsed=self._push_dummy())
         self._aligner1    = ParserAligner()
@@ -137,7 +141,8 @@ class ParserCMSVol(Elaboratable):
         # Register sub‑modules so the simulator/net‑lister sees them
         # --------------------------------------------------------------
         m.submodules += [
-            self._fifo_in,
+            self._fifo_parsing_in, self._fifo_in,self._fifo_output_unfiltered,
+            self._fifo_output_filtered,
             self._eth_parser, self._aligner1,
             self._ip_parser,  self._aligner2,
             self._udp_parser, self._tcp_parser,
@@ -172,6 +177,11 @@ class ParserCMSVol(Elaboratable):
         def _(arg):
             with m.If(arg.error_drop == 0):
                 self._cms.push_c(m, {"data": arg.fields.destination_port})
+        
+        with Transaction().body(m):
+            tmp = self._fifo_in.read(m)
+            self._fifo_parsing_in.write(m,tmp)
+            self._fifo_output_unfiltered.write(m,tmp)
 
         # --------------------------------------------------------------
         # Streaming datapath (3 sequential transactions)
@@ -180,7 +190,7 @@ class ParserCMSVol(Elaboratable):
 
         # 1. Ethernet parser ------------------------------------------
         with Transaction().body(m):
-            word0   = self._fifo_in.read(m)
+            word0   = self._fifo_parsing_in.read(m)
             eth_out = self._eth_parser.step(m, word0)
             self._aligner1.din(m, eth_out)
 
@@ -210,5 +220,28 @@ class ParserCMSVol(Elaboratable):
                 with branch(al2["next_proto"] == IpProtoOut.TCP):
                     self._tcp_parser.step(m, tr_in)
             # Unknown/other protocols fall through (no L4 parser)
+        # We want to filter input data using results from the CMS
+        packet_passing = Signal(32,init=0)
+        packet_dropping = Signal(1,init=0)
+        decision = Signal(32,init=0)
+        with Transaction().body(m,request=(packet_passing == 0)& ~packet_dropping):
+            decision = self._cms.out(m)["data"]
+            with m.If(decision == 0):
+                m.d.sync += packet_dropping.eq(1)
+            with m.Else():
+                m.d.sync += packet_passing.eq(decision)
+        
+        with Transaction().body(m, request=packet_passing):
+            tmp = self._fifo_output_unfiltered.read(m)
+            self._fifo_output_filtered.write(m,tmp)
+            with m.If(tmp["end_of_packet"] == 1):
+                m.d.sync += packet_passing.eq(packet_passing - 1)
+        
+        with Transaction().body(m,request=packet_dropping):
+            tmp = self._fifo_output_unfiltered.read(m)
+            with m.If(tmp["end_of_packet"] == 1):
+                m.d.sync += packet_dropping.eq(0)
+        
+     
 
         return m

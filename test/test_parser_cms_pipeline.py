@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-"""test_parsercmsvol.py
+"""test_parser_cms_pipeline.py
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Functional test-bench for **ParserCMSVol** – a unified packet-parsing and
-count-/volume-statistics pipeline.
+Functional test‑bench for **ParserCMSVol** – a unified packet‑parsing and
+count‑/volume‑statistics pipeline.
 
-The stimulus and timing model follow *test_parsing.py* while the
-sink/decision recording mirrors *test_cmsvolcontroller.py*.
+* Stimulus generation follows the original *test_parsing.py* logic.
+* **NEW:** Instead of interpreting the numerical *out* decisions, the TB now
+  consumes the fully reconstructed packet stream available on **dout** and
+  writes it verbatim to *filtered_output_pipeline.pcap*.
 
 Simulation input:  *example_pcaps/flows.pcap*
 Simulation output: *filtered_output_pipeline.pcap* (written after the run)
@@ -21,29 +23,29 @@ from transactron.testing.testbenchio import CallTrigger
 from mur.final_build.ParserCMSVol import ParserCMSVol  # adjust if module path differs
 
 # -----------------------------------------------------------------------
-#  Helpers copied from test_parsing.py                                   
+#  Helpers (unchanged from the original version)                           
 # -----------------------------------------------------------------------
-CYCLE_TIME = 0.0001  # 2 µs per cycle (same as other TBs)
+CYCLE_TIME = 0.0001  # 2 µs per cycle – matches ParserCMSVol configuration
 
 
 def bytes_to_int_le(b: bytes) -> int:
-    """Convert *b* to little-endian integer (max 64 B → 512 b word)."""
+    """Convert *b* to little‑endian integer (max 64 B → 512 b word)."""
     return int.from_bytes(b, "little")
 
 
 def split_chunks(buf: bytes, size: int = 64):
-    """Split *buf* into *size*-byte chunks (pad last one with zeros)."""
+    """Split *buf* into *size*-byte chunks (pad last chunk with zeros)."""
     return [buf[i : i + size].ljust(size, b"\0") for i in range(0, len(buf), size)] or [b"".ljust(size, b"\0")]
 
 
 # -----------------------------------------------------------------------
-#  Test-bench                                                            
+#  Test‑bench                                                             
 # -----------------------------------------------------------------------
 class TestParserCMSVol(TestCaseWithSimulator):
-    """Randomised functional TB for **ParserCMSVol**."""
+    """Randomised functional TB for **ParserCMSVol** with direct packet output."""
 
     # ------------------------------------------------------------------
-    #  Stimulus generation
+    #  Stimulus generation (identical to the previous version)
     # ------------------------------------------------------------------
     def setup_method(self):
         seed(42)
@@ -53,18 +55,17 @@ class TestParserCMSVol(TestCaseWithSimulator):
             raise RuntimeError("Input pcap is empty or missing.")
 
         self.inputs: list[dict] = []  # queued words for *din*
-        self.packets: list = []       # original packet order
 
-        base_ts = pkts[0].time  # zero-offset timestamps
+        base_ts = pkts[0].time  # zero‑offset timestamps
         for p in pkts:
             raw = bytes(p)
             pkt_ts = p.time - base_ts
 
-            # Split raw bytes into 64-byte words -----------------------
+            # Split raw bytes into 64‑byte words -----------------------
             for i, chunk in enumerate(split_chunks(raw, 64)):
                 last = i == ((len(raw) + 63) // 64) - 1
                 eop_len = len(raw) % 64 if last else 0
-                # Corner-case: exact multiple of 64 B -----------------
+                # Corner‑case: exact multiple of 64 B -----------------
                 eop_len = 64 if last and eop_len == 0 and raw else eop_len
 
                 self.inputs.append(
@@ -76,12 +77,10 @@ class TestParserCMSVol(TestCaseWithSimulator):
                     }
                 )
 
-            self.packets.append(p)
-
-        # Shared indices for coroutines --------------------------------
-        self._in_idx: int = 0   # next word to feed into *din*
-        self._out_idx: int = 0  # next packet to decide upon
-        self._filtered: list = []  # packets kept by the DUT
+        # Shared indices & state flags --------------------------------
+        self._in_idx: int = 0           # next word to feed into *din*
+        self._driver_done: bool = False # set True once driver finishes
+        self.filtered_packets: list[bytes] = []  # packets reconstructed from *dout*
 
     # ------------------------------------------------------------------
     #  Driver – feeds *din* words in timestamp order
@@ -103,34 +102,44 @@ class TestParserCMSVol(TestCaseWithSimulator):
             cycle += 1
             if res is not None:  # accepted
                 self._in_idx += 1
+        # Let the pipeline drain naturally – mark driver completion
+        self._driver_done = True
 
     # ------------------------------------------------------------------
-    #  Sink – pulls decisions from *out* and builds filtered capture
+    #  Sink – pulls packet words from *dout* and assembles filtered pcap
     # ------------------------------------------------------------------
-    async def _sink_out(self, sim):
-        while self._out_idx < len(self.packets):
-            resp = await self.dut.out.call(sim)
-            if resp["valid"] == 0:
-                continue  # back-pressure
+    async def _collect_dout(self, sim):
+        cur_pkt = bytearray()
+        idle_cycles = 0
 
-            val = int(resp["data"])
-            if val == 0:
-                # Drop exactly one packet ----------------------------
-                print("Dropping packet")
-                self._out_idx += 1
+        # Continue until the driver is done *and* dout stays idle for a while
+        while not (self._driver_done and idle_cycles > 200):
+            resp = await self.dut.dout.call_try(sim)
+            if resp is None:
+                idle_cycles += 1
+                await sim.tick()
+                continue
+
+            idle_cycles = 0  # reset on every successful read
+
+            # Convert 64‑byte LE word back to bytes -------------------
+            data_bytes = int(resp["data"]).to_bytes(64, byteorder="little")
+
+            if resp["end_of_packet"]:
+                length = resp["end_of_packet_len"] or 64
+                cur_pkt.extend(data_bytes[:length])
+                # Store completed packet ----------------------------
+                self.filtered_packets.append(bytes(cur_pkt))
+                cur_pkt.clear()
             else:
-                # Keep *val* packets (or until exhausted) -----------
-                for _ in range(val):
-                    if self._out_idx >= len(self.packets):
-                        break
-                    self._filtered.append(self.packets[self._out_idx])
-                    self._out_idx += 1
+                cur_pkt.extend(data_bytes)
+
         # After loop, write resulting capture -------------------------
-        wrpcap("filtered_output_pipeline.pcap", self._filtered)
-        print(f"Filtered pcap written with {len(self._filtered)} packets.")
+        wrpcap("filtered_output_pipeline.pcap", self.filtered_packets)
+        print(f"Filtered pcap written with {len(self.filtered_packets)} packets.")
 
     # ------------------------------------------------------------------
-    #  Top-level test (entry-point)
+    #  Top‑level test (entry‑point)
     # ------------------------------------------------------------------
     def test_pipeline(self):
         core = ParserCMSVol(
@@ -145,4 +154,4 @@ class TestParserCMSVol(TestCaseWithSimulator):
 
         with self.run_simulation(self.dut) as sim:
             sim.add_testbench(self._drive_din)
-            sim.add_testbench(self._sink_out)
+            sim.add_testbench(self._collect_dout)

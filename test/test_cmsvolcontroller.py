@@ -109,9 +109,7 @@ class TestCMSVolController(TestCaseWithSimulator):
     # ------------------------------------------------------------------
     async def _sink_process(self, sim):
         while self._out_idx < len(self.packets):
-            resp = await self.dut.out.call(sim)
-            if resp["valid"] == 0:
-                continue                      # back‑pressure
+            resp = await self.dut.out.call(sim)           # back‑pressure
 
             val = int(resp["data"])
             print(f"out: {val}")
