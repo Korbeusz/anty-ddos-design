@@ -64,7 +64,7 @@ class ParserAligner(Elaboratable):
             m.d.sync += output_end_of_packet_flag.eq(0)
             m.d.sync += output_end_of_packet.eq(0)
 
-            log.debug(m, True, "aligned_output {} {:x} {:x}", output_v, output, buffer)
+            #log.debug(m, True, "aligned_output {} {:x} {:x}", output_v, output, buffer)
 
             end_of_packet_len = Mux(output_v, output_end_of_packet, buffer_end_pending)
             end_of_packet_flag = Mux(output_v, output_end_of_packet_flag, buffer_end_pending_flag)
@@ -121,8 +121,8 @@ class ParserAligner(Elaboratable):
             with m.Else():
                 m.d.sync += buffer_consumed.eq(octet_count)
 
-            log.debug(
-                m, True, "din run \nout {:x} \nbuffer {:x} \nin {:x} c {:x}", output, buffer, data, octets_consumed
-            )
+            #log.debug(
+            #    m, True, "din run \nout {:x} \nbuffer {:x} \nin {:x} c {:x}", output, buffer, data, octets_consumed
+            #)
 
         return m
