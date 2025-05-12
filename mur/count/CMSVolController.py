@@ -51,25 +51,29 @@ class CMSVolController(Elaboratable):
         width: int = 32,
         counter_width: int = 32,
         hash_params: list[tuple[int, int]] | None = None,
+        discard_threshold: int = 0,
         # VolCounter -------------------------------------------------------
         window: int = 1024,
-        threshold: int = 10_000,
+        volume_threshold: int = 10_000,
         # FIFO depths ------------------------------------------------------
         fifo_depth: int = 16,
     ) -> None:
 
+        self.discover_threshold = discard_threshold
         # ── Ingress FIFOs (WRITE exposed) ---------------------------------
         lay32 = [("data", 32)]
         lay16 = [("data", 16)]
 
-        self._fifo_a = BasicFifo(lay32, fifo_depth)
-        self._fifo_b = BasicFifo(lay32, fifo_depth)
-        self._fifo_s = BasicFifo(lay16, fifo_depth)
+        self._fifo_sip = BasicFifo(lay32, fifo_depth)
+        self._fifo_dip = BasicFifo(lay32, fifo_depth)
+        self._fifo_dport = BasicFifo(lay16, fifo_depth)
+        self._fifo_len = BasicFifo(lay16, fifo_depth)
 
         # Public *write* handles so outer modules can inject data
-        self.push_a = self._fifo_a.write   # 32‑bit word, low
-        self.push_b = self._fifo_b.write   # 32‑bit word, high
-        self.push_s = self._fifo_s.write   # 16‑bit volume sample
+        self.push_a = self._fifo_sip.write   # 32‑bit word, low
+        self.push_b = self._fifo_dip.write   # 32‑bit word, high
+        self.push_c = self._fifo_dport.write  # 16‑bit word, low
+        self.push_s = self._fifo_len.write    # 16‑bit word, high
 
         self._insert_requested = Signal(32)
         self._query_requested = Signal(32)
@@ -79,16 +83,30 @@ class CMSVolController(Elaboratable):
         outlay = [("data", 32), ("valid", 1)]
         self.out = Method(o=outlay)
         # ── Sub‑modules ----------------------------------------------------
-        self.rcms = RollingCountMinSketch(
+        self.rcms_sipdip = RollingCountMinSketch(
             depth            = depth,
             width            = width,
             counter_width    = counter_width,
-            input_data_width = 64,              # Cat(32,32)
+            input_data_width = 32+32,              # Cat(32,32)
+            hash_params      = hash_params,
+        )
+        self.rcms_dportdip = RollingCountMinSketch(
+            depth            = depth,
+            width            = width,
+            counter_width    = counter_width,
+            input_data_width = 16+32,              
+            hash_params      = hash_params,
+        )
+        self.rcms_siplen = RollingCountMinSketch(
+            depth            = depth,
+            width            = width,
+            counter_width    = counter_width,
+            input_data_width = 32+16,              # Cat(32,16)
             hash_params      = hash_params,
         )
         self.vcnt = VolCounter(
             window       = window,
-            threshold    = threshold,
+            threshold    = volume_threshold,
             input_width  = 16,
         )
 
@@ -100,8 +118,8 @@ class CMSVolController(Elaboratable):
 
         # Register every sub‑block so the simulator/net‑list sees them
         m.submodules += [
-            self._fifo_a, self._fifo_b, self._fifo_s,
-            self.rcms, self.vcnt,
+            self._fifo_sip,self._fifo_dip,self._fifo_dport,self._fifo_len,
+            self.vcnt, self.rcms_sipdip, self.rcms_dportdip, self.rcms_siplen,
         ]
 
         # ------------------------------------------------------------
@@ -109,11 +127,14 @@ class CMSVolController(Elaboratable):
         # ------------------------------------------------------------
         self._current_mode = Signal(1)
         with Transaction().body(m):
-            a = self._fifo_a.read(m)            # low  word
-            b = self._fifo_b.read(m)            # high word
-            s = self._fifo_s.read(m)            # volume sample
+            sip = self._fifo_sip.read(m)
+            dip = self._fifo_dip.read(m)
+            dport = self._fifo_dport.read(m)
+            s = self._fifo_len.read(m)
 
-            self._current_mode = self.rcms.input(m, data=Cat(a["data"], b["data"]))["mode"]
+            self._current_mode = self.rcms_sipdip.input(m, data=Cat(sip["data"], dip["data"]))["mode"]
+            self.rcms_dportdip.input(m, data=Cat(dport["data"], dip["data"]))
+            self.rcms_siplen.input(m, data=Cat(sip["data"], s["data"]))
             with m.If(self._current_mode == 0):
                 m.d.sync += self._insert_requested.eq(self._insert_requested + 1)
             with m.Else():
@@ -127,9 +148,13 @@ class CMSVolController(Elaboratable):
         # ------------------------------------------------------------
         with Transaction().body(m):
             res = self.vcnt.result(m)           # ready only each *window*
-            self.rcms.set_mode(m, mode=res["mode"])
+            self.rcms_sipdip.set_mode(m, mode=res["mode"])
+            self.rcms_dportdip.set_mode(m, mode=res["mode"])
+            self.rcms_siplen.set_mode(m, mode=res["mode"])
             with m.If(res["mode"] == 0):
-                self.rcms.change_roles(m)
+                self.rcms_sipdip.change_roles(m)
+                self.rcms_dportdip.change_roles(m)
+                self.rcms_siplen.change_roles(m)
             log.debug(m, True, "RCMS mode {:d} → {:d}", self._current_mode, res["mode"])
             
 
@@ -145,17 +170,20 @@ class CMSVolController(Elaboratable):
         self._out_valid = Signal(1)
         @def_method(m, self.out)
         def _():
-            q = self.rcms.output(m)
+            q1 = self.rcms_sipdip.output(m)
+            q2 = self.rcms_dportdip.output(m)
+            q3 = self.rcms_siplen.output(m)
             log.debug(m, True, " _inserts_difference {:d}, _all_query_received {:d}", self._inserts_difference, self._all_query_received)
+            log.debug(m, True, "cms_sum:{:d}+{:d}+{:d}", q1["count"], q2["count"], q3["count"])
             m.d.comb += self._out_valid.eq(0)
             with m.If(self._all_query_received & self._inserts_difference):
                 m.d.comb += self._out.eq(self._inserts_difference)
                 m.d.sync += self._insert_received.eq(self._insert_requested)
                 m.d.comb += self._out_valid.eq(1)
-            with m.If(~self._all_query_received & q["valid"]):
+            with m.If(~self._all_query_received & q1["valid"]):
                 m.d.comb += self._out_valid.eq(1)
                 m.d.sync += self._query_received.eq(self._query_received + 1)
-                m.d.comb += self._out.eq(Mux(q["count"] > 0,1,0))
+                m.d.comb += self._out.eq(Mux(q1["count"] + q2["count"] + q3["count"] > self.discover_threshold,1,0))
             return {"data": self._out, "valid": self._out_valid}
             
             
