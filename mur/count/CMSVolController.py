@@ -71,17 +71,13 @@ class CMSVolController(Elaboratable):
         self.push_b = self._fifo_b.write   # 32‑bit word, high
         self.push_s = self._fifo_s.write   # 16‑bit volume sample
 
-        # ── Egress FIFO for RCMS query results -----------------------------
-        out_lay = [("data", 32)]
-        self._fifo_out = BasicFifo(out_lay, fifo_depth)
-        self.pop_count = self._fifo_out.read   # public *read* for estimates
-
         self._insert_requested = Signal(32)
         self._query_requested = Signal(32)
         self._insert_received = Signal(32)
         self._query_received = Signal(32)
 
-
+        outlay = [("data", 32), ("valid", 1)]
+        self.out = Method(o=outlay)
         # ── Sub‑modules ----------------------------------------------------
         self.rcms = RollingCountMinSketch(
             depth            = depth,
@@ -104,7 +100,7 @@ class CMSVolController(Elaboratable):
 
         # Register every sub‑block so the simulator/net‑list sees them
         m.submodules += [
-            self._fifo_a, self._fifo_b, self._fifo_s, self._fifo_out,
+            self._fifo_a, self._fifo_b, self._fifo_s,
             self.rcms, self.vcnt,
         ]
 
@@ -145,18 +141,22 @@ class CMSVolController(Elaboratable):
         self._all_query_received = Signal(1)
         m.d.comb += self._all_query_received.eq(self._query_requested == self._query_received)
         self._query_decision = Signal(32)
-        self._out_fifo_input = Signal(32)
-        with Transaction().body(m):
+        self._out = Signal(32)
+        self._out_valid = Signal(1)
+        @def_method(m, self.out)
+        def _():
             q = self.rcms.output(m)
             log.debug(m, True, " _inserts_difference {:d}, _all_query_received {:d}", self._inserts_difference, self._all_query_received)
-            m.d.comb += self._out_fifo_input.eq(2323)
+            m.d.comb += self._out_valid.eq(0)
             with m.If(self._all_query_received & self._inserts_difference):
-                m.d.comb += self._out_fifo_input.eq(self._inserts_difference)
+                m.d.comb += self._out.eq(self._inserts_difference)
                 m.d.sync += self._insert_received.eq(self._insert_requested)
+                m.d.comb += self._out_valid.eq(1)
             with m.If(~self._all_query_received & q["valid"]):
+                m.d.comb += self._out_valid.eq(1)
                 m.d.sync += self._query_received.eq(self._query_received + 1)
-                m.d.comb += self._out_fifo_input.eq(Mux(q["count"] > 0,1,0))
-            self._fifo_out.write(m, {"data": self._out_fifo_input})
+                m.d.comb += self._out.eq(Mux(q["count"] > 0,1,0))
+            return {"data": self._out, "valid": self._out_valid}
             
             
 

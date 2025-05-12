@@ -100,11 +100,12 @@ class TestCMSVolController(TestCaseWithSimulator):
         while self._out_idx < len(self.packets):
         
 
-            resp = await self.dut.pop_count.call(sim)
-            val = int(resp["data"])
-            print(f"pop_count: {val}")
-            if val == 2323:
+            resp = await self.dut.out.call(sim)
+            if resp ["valid"] == 0:
                 continue
+            val = int(resp["data"])
+            
+            print(f"pop_count: {val}")
             if val == 0:
                 # Drop exactly *one* packet
                 self._out_idx += 1
