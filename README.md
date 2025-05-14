@@ -1,6 +1,6 @@
 # Module Overview – DDoS‑Filtering Hardware Design
 
-This markdown file walks through every significant Python/Amaranth RTL module in the *mur* project and explains how each piece contributes to a **line‑rate DDoS‑mitigation pipeline**.  The design parses packets, measures flow statistics, decides whether to pass or drop them, and keeps rolling state that helps identify volumetric or flood attacks in real time.
+This markdown file walks through every significant Python/Amaranth RTL module in the *mur* project and explains how each piece contributes to a **line‑rate DDoS‑mitigation pipeline**.  The design parses packets, measures flow statistics, decides whether to pass or drop them to identify volumetric or flood attacks in real time.
 
 ---
 
