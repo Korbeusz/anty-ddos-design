@@ -58,18 +58,24 @@ class CountHashTab(Elaboratable):
         rd = self._mem.read_port(domain="sync", transparent_for=(wr,))
 
         # ── Pipeline and housekeeping flags ───────────────────────────
-        req_hash_calculating1 = Signal()  # hash index calculation in progress
-        req_hash_calculating2 = Signal()  # hash index calculation in progress
-        req_memory_read = Signal()          # memory access in progress
-        req_ready        = Signal()          # ready to accept new request
+        req_hash_calculating1 = Signal()  
+        req_hash_calculating2 = Signal()  
+        req_memory_read = Signal()
+        req_save = Signal()          
+        req_ready        = Signal()         
+        req_read_value = Signal(self.counter_width) 
 
         insert_hash_calculating1 = Signal()
-        insert_hash_calculating2 = Signal()  # hash index calculation in progress
-        insert_memory_read = Signal()         # INSERT memory access
-        insert_memory_write = Signal()        # INSERT memory access
+        insert_hash_calculating2 = Signal()  
+        insert_memory_read = Signal()         
+        insert_incrementing = Signal()        
+        insert_memory_write = Signal()        
         insert_memory_write_address = Signal(range(self.size))
+        insert_memory_write_address2 = Signal(range(self.size))
+        insert_incremented_value = Signal(self.counter_width) 
 
         req_addr_for_read     = Signal(range(self.size))  # hash index
+        req_addr2 = Signal(range(self.size))  # hash index
         insert_addr_for_read     = Signal(range(self.size))  # hash index
         
         #hash signals 
@@ -92,11 +98,13 @@ class CountHashTab(Elaboratable):
             req_hash_calculating1.eq(0),
             req_hash_calculating2.eq(req_hash_calculating1),
             req_memory_read.eq(req_hash_calculating2),
-            req_ready.eq(req_memory_read),
+            req_save.eq(req_memory_read),
+            req_ready.eq(req_save),
             insert_hash_calculating1.eq(0),
             insert_hash_calculating2.eq(insert_hash_calculating1),
             insert_memory_read.eq(insert_hash_calculating2),
-            insert_memory_write.eq(insert_memory_read),
+            insert_incrementing.eq(insert_memory_read),
+            insert_memory_write.eq(insert_incrementing),
             clr_waiting1.eq(0),
             clr_waiting2.eq(clr_waiting1),
         ]
@@ -112,18 +120,34 @@ class CountHashTab(Elaboratable):
         ]
 
         with m.If(req_memory_read):
+            
             m.d.comb += [rd.en.eq(1), rd.addr.eq(req_addr_for_read)]
+            m.d.sync += req_addr2.eq(req_addr_for_read)
         
+        with m.If(req_save):
+            with m.If(insert_memory_write & (insert_memory_write_address2 == req_addr2)):
+                m.d.sync += req_read_value.eq(insert_incremented_value)
+            with m.Else():
+                m.d.sync += req_read_value.eq(rd.data)
+
         with m.If(insert_memory_read):
             m.d.comb += [rd.en.eq(1), rd.addr.eq(insert_addr_for_read)]
             m.d.sync += insert_memory_write_address.eq(insert_addr_for_read)
 
+        with m.If(insert_incrementing):
+            with m.If(insert_memory_write & (insert_memory_write_address2 == insert_memory_write_address)):
+                m.d.sync += insert_incremented_value.eq(insert_incremented_value + 1)
+            with m.Else():
+                m.d.sync += insert_incremented_value.eq(rd.data + 1)
+            m.d.sync += insert_memory_write_address2.eq(insert_memory_write_address)
+
         with m.If(insert_memory_write):
+            log.debug(m,True,"insert_memory_write {:x} v: {:x}", insert_memory_write_address2, insert_incremented_value)
             # Read-modify-write in cycle after the read
             m.d.comb += [
                 wr.en.eq(1),
-                wr.addr.eq(insert_memory_write_address),
-                wr.data.eq(rd.data + 1),
+                wr.addr.eq(insert_memory_write_address2),
+                wr.data.eq(insert_incremented_value),
             ]
         
         with m.If(clr_waiting2):
@@ -144,16 +168,18 @@ class CountHashTab(Elaboratable):
 
         @def_method(m, self.insert)
         def _(data):
+            log.debug(m,True,"INSERT")
             m.d.sync += insert_hash_calculating1.eq(1)
             m.d.sync += insert_data.eq(data)
             
         
         @def_method(m, self.query_resp)
         def _():
-            return {"count": rd.data, "valid": req_ready}
+            return {"count": req_read_value, "valid": req_ready}
 
         @def_method(m, self.query_req)
         def _(data):
+            log.debug(m,True,"QUERY")
             m.d.sync += req_hash_calculating1.eq(1)
             m.d.sync += req_insert_data.eq(data)
         
