@@ -73,7 +73,7 @@ class ParserCMSVol(Elaboratable):
         self._fifo_output_filtered = BasicFifo(layouts.parser_in_layout, fifo_output_depth)
         self._fifo_in = BasicFifo(layouts.parser_in_layout, fifo_depth_in)
         self.din = self._fifo_in.write       # external handle
-        self.dout = self._fifo_output_filtered.read       # external handle
+        self.dout = Method(o=layouts.parser_in_layout)  # external handle
         # --------------------- Parsers & helpers -----------------------
         self._eth_parser  = EthernetParser(push_parsed=self._push_dummy())
         self._aligner1    = ParserAligner()
@@ -81,6 +81,8 @@ class ParserCMSVol(Elaboratable):
         self._aligner2    = ParserAligner()
         self._udp_parser  = UDPParser(push_parsed=self._push_parsed_udp())
         self._tcp_parser  = TCPParser(push_parsed=self._push_parsed_tcp())
+        self._number_of_full_packets_processed = Signal(32, init=0)
+        self._number_of_full_packets_outputted = Signal(32, init=0)
 
         # --------------------- CMS / volume engine ---------------------
         self._cms = CMSVolController(
@@ -236,12 +238,20 @@ class ParserCMSVol(Elaboratable):
             self._fifo_output_filtered.write(m,tmp)
             with m.If(tmp["end_of_packet"] == 1):
                 m.d.sync += packet_passing.eq(packet_passing - 1)
+                m.d.sync += self._number_of_full_packets_processed.eq(self._number_of_full_packets_processed + 1)
         
         with Transaction().body(m,request=packet_dropping):
             tmp = self._fifo_output_unfiltered.read(m)
             with m.If(tmp["end_of_packet"] == 1):
                 m.d.sync += packet_dropping.eq(0)
         
-     
+        full_packet_in_filtered_queue = Signal(1,init=0)
+        m.d.comb += full_packet_in_filtered_queue.eq(self._number_of_full_packets_outputted != self._number_of_full_packets_processed) 
+        @def_method(m, self.dout,ready=full_packet_in_filtered_queue)
+        def _():
+            word = self._fifo_output_filtered.read(m)
+            with m.If(word["end_of_packet"] == 1):
+                m.d.sync += self._number_of_full_packets_outputted.eq(self._number_of_full_packets_outputted + 1)
+            return word
 
         return m

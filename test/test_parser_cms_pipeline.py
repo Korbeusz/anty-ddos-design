@@ -129,14 +129,17 @@ class TestParserCMSVol(TestCaseWithSimulator):
     async def _collect_dout(self, sim):
         cur_pkt = bytearray()
         idle_cycles = 0
-
+        in_middle_of_packet = False
         # Continue until the driver is done *and* dout stays idle for a while
         while not (self._driver_done and idle_cycles > 200):
             resp = await self.dut.dout.call_try(sim)
+            assert not((resp is None) and in_middle_of_packet), "Unexpected idle cycle in the middle of a packet."
             if resp is None:
                 idle_cycles += 1
                 await sim.tick()
                 continue
+            
+            in_middle_of_packet = True
 
             idle_cycles = 0  # reset on every successful read
 
@@ -149,6 +152,7 @@ class TestParserCMSVol(TestCaseWithSimulator):
                 # Store completed packet ----------------------------
                 self.filtered_packets.append(bytes(cur_pkt))
                 cur_pkt.clear()
+                in_middle_of_packet = False
             else:
                 cur_pkt.extend(data_bytes)
 
