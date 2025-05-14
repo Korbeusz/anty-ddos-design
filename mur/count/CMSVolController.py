@@ -167,23 +167,23 @@ class CMSVolController(Elaboratable):
         self._query_decision = Signal(32)
         self._out = Signal(32)
         self._out_valid = Signal(1)
+        m.d.sync += self._out_valid.eq(0)
         with Transaction().body(m):
             q1 = self.rcms_sipdip.output(m)
             q2 = self.rcms_dportdip.output(m)
             q3 = self.rcms_siplen.output(m)
             log.debug(m, True, " _inserts_difference {:d}, _all_query_received {:d}", self._inserts_difference, self._all_query_received)
             log.debug(m, True, "cms_sum:{:d}+{:d}+{:d}", q1["count"], q2["count"], q3["count"])
-            m.d.comb += self._out_valid.eq(0)
             with m.If(self._all_query_received & self._inserts_difference):
-                m.d.comb += self._out.eq(self._inserts_difference)
+                m.d.sync += self._out.eq(self._inserts_difference)
                 m.d.sync += self._insert_received.eq(self._insert_requested)
-                m.d.comb += self._out_valid.eq(1)
+                m.d.sync += self._out_valid.eq(1)
             with m.If(~self._all_query_received & q1["valid"]):
-                m.d.comb += self._out_valid.eq(1)
+                m.d.sync += self._out_valid.eq(1)
                 m.d.sync += self._query_received.eq(self._query_received + 1)
-                m.d.comb += self._out.eq(Mux(q1["count"] + q2["count"] + q3["count"] > self.discover_threshold,1,0))
-            with m.If(self._out_valid):
-                self._fifo_out.write(m, {"data": self._out})
+                m.d.sync += self._out.eq(Mux(q1["count"] + q2["count"] + q3["count"] > self.discover_threshold,1,0))
+        with Transaction().body(m,request=self._out_valid):    
+            self._fifo_out.write(m, {"data": self._out})
             
             
 
