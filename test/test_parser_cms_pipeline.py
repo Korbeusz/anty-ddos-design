@@ -37,6 +37,19 @@ def split_chunks(buf: bytes, size: int = 64):
     """Split *buf* into *size*-byte chunks (pad last chunk with zeros)."""
     return [buf[i : i + size].ljust(size, b"\0") for i in range(0, len(buf), size)] or [b"".ljust(size, b"\0")]
 
+def compare_pcap_files(file1: str, file2: str) -> bool:
+    """Compare two pcap files and return True if they are identical."""
+    pkts1 = rdpcap(file1)
+    pkts2 = rdpcap(file2)
+
+    if len(pkts1) != len(pkts2):
+        return False
+
+    for pkt1, pkt2 in zip(pkts1, pkts2):
+        if bytes(pkt1) != bytes(pkt2):
+            return False
+
+    return True
 
 # -----------------------------------------------------------------------
 #  Test‑bench                                                             
@@ -135,9 +148,10 @@ class TestParserCMSVol(TestCaseWithSimulator):
                 cur_pkt.extend(data_bytes)
 
         # After loop, write resulting capture -------------------------
-        wrpcap("filtered_output_pipeline.pcap", self.filtered_packets)
+        wrpcap("example_pcaps/filtered_output_pipeline.pcap", self.filtered_packets)
         print(f"Filtered pcap written with {len(self.filtered_packets)} packets.")
-
+        # Compare with the original pcap (if available) ---------------
+        assert compare_pcap_files("example_pcaps/filtered_output_pipeline.pcap", "example_pcaps/flows_answer.pcap"), "Filtered pcap does not match original."
     # ------------------------------------------------------------------
     #  Top‑level test (entry‑point)
     # ------------------------------------------------------------------
