@@ -14,7 +14,7 @@ Simulation input:  *example_pcaps/flows.pcap*
 Simulation output: *filtered_output_pipeline.pcap* (written after the run)
 """
 
-from random import seed
+from random import seed, random
 from scapy.all import rdpcap, wrpcap  # type: ignore
 from transactron.testing import TestCaseWithSimulator, SimpleTestCircuit
 from transactron.testing.testbenchio import CallTrigger
@@ -106,6 +106,11 @@ class TestParserCMSVol(TestCaseWithSimulator):
 
             # Honour original packet timestamp ------------------------
             if sim_time < cur["timestamp"]:
+                await sim.tick()
+                cycle += 1
+                continue
+            # Additional random delay to simulate real-world behaviour ------
+            if random() < 0.1:
                 await sim.tick()
                 cycle += 1
                 continue
