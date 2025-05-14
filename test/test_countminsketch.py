@@ -91,7 +91,7 @@ class TestCountMinSketch(TestCaseWithSimulator):
             else:  # kind == "clear"
                 await self.dut.clear.call_try(sim, {})
                 # Allow the DUT time to sweep the memory
-                for _ in range(self.width):
+                for _ in range(self.width + 2):
                     await sim.tick()
 
     # ──────────────────────────────────────────────────────────────

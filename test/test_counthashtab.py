@@ -26,7 +26,7 @@ class TestCountHashTab(TestCaseWithSimulator):
         seed(42)
 
         # ── DUT parameters ────────────────────────────────────────────
-        self.size          = 18     # number of hash buckets
+        self.size          = 16     # number of hash buckets
         self.counter_width = 32
         self.data_width    = 32
 
@@ -94,8 +94,9 @@ class TestCountHashTab(TestCaseWithSimulator):
                 await self.dut.query_req.call_try(sim, {"data": data})
             else:                           # kind == "clear"
                 await self.dut.clear.call_try(sim, {})
-                for idx in range(self.size):
+                for idx in range(self.size + 2):
                     await sim.tick()         # wait for clear to finish
+                print("CLEAR done!")
 
 
 
