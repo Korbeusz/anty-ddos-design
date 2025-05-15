@@ -41,6 +41,7 @@ class ParserCMSVol(Elaboratable):
             so the packet is discarded.
         cms_fifo_depth (int): The depth of the FIFO used in the CMSVolController.
         chunk_fifo_depth (int): The depth of the processed packets FIFO.
+        chunk_fifo_depth (int): The depth of the processed packets FIFO.
 
     Methods
     -------
@@ -61,18 +62,23 @@ class ParserCMSVol(Elaboratable):
         discard_threshold: int = 0,
         cms_fifo_depth: int = 16,
         chunk_fifo_depth: int = 64,
+        chunk_fifo_depth: int = 64,
     ) -> None:
         self.params = Params()
         layouts = ProtoParserLayouts()
 
         self._fifo_parsing_in = BasicFifo(layouts.parser_in_layout, chunk_fifo_depth)
+        self._fifo_parsing_in = BasicFifo(layouts.parser_in_layout, chunk_fifo_depth)
         self._fifo_output_unfiltered = BasicFifo(
+            layouts.parser_in_layout, chunk_fifo_depth
             layouts.parser_in_layout, chunk_fifo_depth
         )
         self._fifo_output_filtered = BasicFifo(
             layouts.parser_in_layout, chunk_fifo_depth
+            layouts.parser_in_layout, chunk_fifo_depth
         )
 
+        self.din = Method(i=layouts.parser_in_layout)
         self.din = Method(i=layouts.parser_in_layout)
         self.dout = Method(o=layouts.parser_in_layout)
 
@@ -175,6 +181,13 @@ class ParserCMSVol(Elaboratable):
             self._fifo_output_unfiltered.write(m, arg)
 
         # PARSING
+        # COPY INPUT
+        @def_method(m, self.din)
+        def _(arg):
+            self._fifo_parsing_in.write(m, arg)
+            self._fifo_output_unfiltered.write(m, arg)
+
+        # PARSING
 
         with Transaction().body(m):
             word0 = self._fifo_parsing_in.read(m)
@@ -206,6 +219,7 @@ class ParserCMSVol(Elaboratable):
                     self._tcp_parser.step(m, tr_in)
 
         # FILTERING
+        # FILTERING
         decision = Signal(32, init=0)
         decision_valid = Signal(1, init=0)
 
@@ -236,6 +250,10 @@ class ParserCMSVol(Elaboratable):
             self._number_of_full_packets_outputted
             != self._number_of_full_packets_processed
         )
+
+        with Transaction().body(m, request=~decision_valid):
+            m.d.sync += decision.eq(self._cms.out(m)["data"])
+            m.d.sync += decision_valid.eq(1)
 
         with Transaction().body(m, request=~decision_valid):
             m.d.sync += decision.eq(self._cms.out(m)["data"])
