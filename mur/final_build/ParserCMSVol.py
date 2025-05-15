@@ -209,6 +209,10 @@ class ParserCMSVol(Elaboratable):
         decision = Signal(32, init=0)
         decision_valid = Signal(1, init=0)
 
+        with Transaction().body(m, request=~decision_valid):
+            m.d.sync += decision.eq(self._cms.out(m)["data"])
+            m.d.sync += decision_valid.eq(1)
+
         with Transaction().body(
             m,
             request=(decision_valid & (decision > 0)),
@@ -236,10 +240,6 @@ class ParserCMSVol(Elaboratable):
             self._number_of_full_packets_outputted
             != self._number_of_full_packets_processed
         )
-
-        with Transaction().body(m, request=~decision_valid):
-            m.d.sync += decision.eq(self._cms.out(m)["data"])
-            m.d.sync += decision_valid.eq(1)
 
         @def_method(m, self.dout, ready=full_packet_in_filtered_queue)
         def _():
