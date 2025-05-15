@@ -29,7 +29,6 @@ class ParserCMSVol(Elaboratable):
 
     Attributes
     ----------
-        fifo_depth_in (int): Depth of the input FIFO for chunks of incoming packets.
         depth (int): Number of hash tables (rows) in the sketch.
         width (int): The size of CountHashTab (number of hash buckets).
         counter_width (int): Number of bits in each counter.
@@ -41,7 +40,7 @@ class ParserCMSVol(Elaboratable):
             then the corresponding packet values have not been seen in the window before
             so the packet is discarded.
         cms_fifo_depth (int): The depth of the FIFO used in the CMSVolController.
-        fifo_output_depth (int): The depth of the processed packets FIFO.
+        chunk_fifo_depth (int): The depth of the processed packets FIFO.
 
     Methods
     -------
@@ -53,7 +52,6 @@ class ParserCMSVol(Elaboratable):
     def __init__(
         self,
         *,
-        fifo_depth_in: int = 16,
         depth: int = 4,
         width: int = 16_384,
         counter_width: int = 32,
@@ -62,21 +60,20 @@ class ParserCMSVol(Elaboratable):
         volume_threshold: int = 100_000,
         discard_threshold: int = 0,
         cms_fifo_depth: int = 16,
-        fifo_output_depth: int = 1024,
+        chunk_fifo_depth: int = 64,
     ) -> None:
         self.params = Params()
         layouts = ProtoParserLayouts()
 
-        self._fifo_in = BasicFifo(layouts.parser_in_layout, fifo_depth_in)
-        self._fifo_parsing_in = BasicFifo(layouts.parser_in_layout, fifo_output_depth)
+        self._fifo_parsing_in = BasicFifo(layouts.parser_in_layout, chunk_fifo_depth)
         self._fifo_output_unfiltered = BasicFifo(
-            layouts.parser_in_layout, fifo_output_depth
+            layouts.parser_in_layout, chunk_fifo_depth
         )
         self._fifo_output_filtered = BasicFifo(
-            layouts.parser_in_layout, fifo_output_depth
+            layouts.parser_in_layout, chunk_fifo_depth
         )
 
-        self.din = self._fifo_in.write
+        self.din = Method(i=layouts.parser_in_layout)
         self.dout = Method(o=layouts.parser_in_layout)
 
         self._eth_parser = EthernetParser(push_parsed=self._push_dummy())
@@ -136,7 +133,6 @@ class ParserCMSVol(Elaboratable):
         m = TModule()
         m.submodules += [
             self._fifo_parsing_in,
-            self._fifo_in,
             self._fifo_output_unfiltered,
             self._fifo_output_filtered,
             self._eth_parser,
@@ -172,10 +168,13 @@ class ParserCMSVol(Elaboratable):
 
         layouts = ProtoParserLayouts()
 
-        with Transaction().body(m):
-            tmp = self._fifo_in.read(m)
-            self._fifo_parsing_in.write(m, tmp)
-            self._fifo_output_unfiltered.write(m, tmp)
+        # COPY INPUT
+        @def_method(m, self.din)
+        def _(arg):
+            self._fifo_parsing_in.write(m, arg)
+            self._fifo_output_unfiltered.write(m, arg)
+
+        # PARSING
 
         with Transaction().body(m):
             word0 = self._fifo_parsing_in.read(m)
@@ -206,35 +205,63 @@ class ParserCMSVol(Elaboratable):
                 with branch(al2["next_proto"] == IpProtoOut.TCP):
                     self._tcp_parser.step(m, tr_in)
 
-        packet_passing = Signal(32, init=0)
-        packet_dropping = Signal(1, init=0)
+        # FILTERING
         decision = Signal(32, init=0)
-        with Transaction().body(m, request=(packet_passing == 0) & ~packet_dropping):
-            decision = self._cms.out(m)["data"]
-            with m.If(decision == 0):
-                m.d.sync += packet_dropping.eq(1)
-            with m.Else():
-                m.d.sync += packet_passing.eq(decision)
+        decision_valid = Signal(1, init=0)
 
-        with Transaction().body(m, request=packet_passing):
-            tmp = self._fifo_output_unfiltered.read(m)
-            self._fifo_output_filtered.write(m, tmp)
-            with m.If(tmp["end_of_packet"] == 1):
-                m.d.sync += packet_passing.eq(packet_passing - 1)
+        passed_chunk_valid = Signal(1, init=0)
+        passed_chunk_drop = Signal(1, init=0)
+        passed_chunk = Signal(layouts.parser_in_layout)
+
+        with Transaction().body(m, request=passed_chunk_valid):
+            self._fifo_output_filtered.write(m, passed_chunk)
+            m.d.sync += passed_chunk_valid.eq(0)
+            with m.If(passed_chunk["end_of_packet"]):
+                m.d.sync += decision.eq(decision - 1)
+                with m.If(decision == 1):
+                    m.d.sync += decision_valid.eq(0)
                 m.d.sync += self._number_of_full_packets_processed.eq(
                     self._number_of_full_packets_processed + 1
                 )
+        with Transaction().body(
+            m,
+            request=(
+                decision_valid
+                & (decision > 0)
+                & ~(
+                    passed_chunk_valid
+                    & self._fifo_output_filtered.write.ready
+                    & passed_chunk["end_of_packet"]
+                    & (decision == 1)
+                )
+                & (~passed_chunk_valid | self._fifo_output_filtered.write.ready)
+            ),
+        ):
 
-        with Transaction().body(m, request=packet_dropping):
-            tmp = self._fifo_output_unfiltered.read(m)
-            with m.If(tmp["end_of_packet"] == 1):
-                m.d.sync += packet_dropping.eq(0)
+            m.d.sync += passed_chunk.eq(self._fifo_output_unfiltered.read(m))
+            m.d.sync += passed_chunk_valid.eq(1)
+
+        with m.If(passed_chunk_drop & passed_chunk["end_of_packet"]):
+            m.d.sync += decision_valid.eq(0)
+            m.d.sync += passed_chunk_drop.eq(0)
+        with Transaction().body(
+            m,
+            request=decision_valid
+            & (decision == 0)
+            & ~(passed_chunk_drop & passed_chunk["end_of_packet"]),
+        ):
+            m.d.sync += passed_chunk.eq(self._fifo_output_unfiltered.read(m))
+            m.d.sync += passed_chunk_drop.eq(1)
 
         full_packet_in_filtered_queue = Signal(1, init=0)
         m.d.comb += full_packet_in_filtered_queue.eq(
             self._number_of_full_packets_outputted
             != self._number_of_full_packets_processed
         )
+
+        with Transaction().body(m, request=~decision_valid):
+            m.d.sync += decision.eq(self._cms.out(m)["data"])
+            m.d.sync += decision_valid.eq(1)
 
         @def_method(m, self.dout, ready=full_packet_in_filtered_queue)
         def _():
