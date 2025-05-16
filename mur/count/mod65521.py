@@ -37,11 +37,13 @@ class Mod65521(Elaboratable):
             if idx == 0:
                 m.d.comb += nxt[idx].eq(limb)
             elif idx == self.input_width // 16 - 1:
-                m.d.sync += nxt[idx].eq(nxt[idx - 1] * 15 + limb)
+                m.d.sync += nxt[idx].eq((nxt[idx - 1] << 4) - nxt[idx - 1] + limb)
             else:
-                m.d.comb += nxt[idx].eq(nxt[idx - 1] * 15 + limb)
+                m.d.comb += nxt[idx].eq((nxt[idx - 1] << 4) - nxt[idx - 1] + limb)
         folded = Signal(18)
-        m.d.comb += folded.eq((nxt[3] & 0xFFFF) + ((nxt[3] >> 16) * 15))
+        m.d.comb += folded.eq(
+            (nxt[3] & 0xFFFF) + (((nxt[3] >> 16) << 4) - (nxt[3] >> 16))
+        )
 
         @def_method(m, self.result)
         def _():
