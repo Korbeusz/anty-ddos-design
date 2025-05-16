@@ -9,7 +9,7 @@ MOD65521 = 65_521  # Prime used by the RTL implementation
 
 def ref_hash(x: int, a: int, b: int) -> int:
     """Golden‑model hash: (a · (x mod P) + b) mod P."""
-    return (a * (x % MOD65521) + b) % MOD65521
+    return (a * x + b) % MOD65521
 
 
 @parameterized_class(("input_width",), [(32,), (48,), (64,)])
