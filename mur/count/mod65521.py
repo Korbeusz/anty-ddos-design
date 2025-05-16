@@ -1,6 +1,9 @@
 from amaranth import *
 from transactron import Method, def_method, TModule
 
+from transactron.lib import logging
+
+log = logging.HardwareLogger("count.mod65521")
 __all__ = ["Mod65521"]
 
 
@@ -9,26 +12,41 @@ class Mod65521(Elaboratable):
         if input_width not in (16, 32, 48, 64):
             raise ValueError("input_width must be 16/32/48/64")
         self.input_width = input_width
-        self.calc = Method(i=[("data", input_width)], o=[("mod", 16)])
+        self.input = Method(i=[("data", input_width)])
+        self.result = Method(o=[("mod", 16), ("valid", 1)])
 
     def elaborate(self, platform):
         m = TModule()
+        limbs = [Signal(16, name=f"limb{i}") for i in range(self.input_width // 16)]
+        val = [Signal(1, name=f"val{i}") for i in range(3)]
+        nxt = [Signal(28, name=f"nxt{i}") for i in range(4)]
+        for i in range(3):
+            if i == 0:
+                m.d.sync += val[i].eq(0)
+            else:
+                m.d.sync += val[i].eq(val[i - 1])
 
-        @def_method(m, self.calc)
+        @def_method(m, self.input)
         def _(data):
-            limbs = [data.word_select(i, 16) for i in range(self.input_width // 16)]
-            acc = Signal(28)
-            m.d.comb += acc.eq(0)
-            tmp = acc
-            for idx, limb in enumerate(reversed(limbs)):
-                nxt = Signal(28, name=f"r{idx+1}")
-                m.d.comb += nxt.eq(tmp * 15 + limb)
-                tmp = nxt
-            r_horner = tmp
-            folded = Signal(18)
-            m.d.comb += folded.eq((r_horner & 0xFFFF) + ((r_horner >> 16) * 15))
+            for i in range(self.input_width // 16):
+                rev = self.input_width // 16 - i - 1
+                m.d.sync += limbs[rev].eq(data.word_select(i, 16))
+            m.d.sync += val[0].eq(1)
+
+        for idx, limb in enumerate(limbs):
+            if idx == 0:
+                m.d.comb += nxt[idx].eq(limb)
+            elif idx == self.input_width // 16 - 1:
+                m.d.sync += nxt[idx].eq(nxt[idx - 1] * 15 + limb)
+            else:
+                m.d.comb += nxt[idx].eq(nxt[idx - 1] * 15 + limb)
+        folded = Signal(18)
+        m.d.comb += folded.eq((nxt[3] & 0xFFFF) + ((nxt[3] >> 16) * 15))
+
+        @def_method(m, self.result)
+        def _():
             result = Signal(16)
-            m.d.comb += result.eq(Mux(folded >= 65_521, folded - 65_521, folded))
-            return {"mod": result}
+            m.d.sync += result.eq(Mux(folded >= 65_521, folded - 65_521, folded))
+            return {"mod": result, "valid": val[2]}
 
         return m
