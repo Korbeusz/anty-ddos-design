@@ -9,8 +9,8 @@ __all__ = ["Mod65521"]
 
 class Mod65521(Elaboratable):
     def __init__(self, *, input_width: int = 64) -> None:
-        if input_width not in (16, 32, 48, 64):
-            raise ValueError("input_width must be 16/32/48/64")
+        if input_width not in (32, 48, 64):
+            raise ValueError("input_width must be 32/48/64")
         self.input_width = input_width
         self.input = Method(i=[("data", input_width)])
         self.result = Method(o=[("mod", 16), ("valid", 1)])
@@ -41,8 +41,10 @@ class Mod65521(Elaboratable):
             else:
                 m.d.comb += nxt[idx].eq((nxt[idx - 1] << 4) - nxt[idx - 1] + limb)
         folded = Signal(18)
+        last_index = self.input_width // 16 - 1
         m.d.comb += folded.eq(
-            (nxt[3] & 0xFFFF) + (((nxt[3] >> 16) << 4) - (nxt[3] >> 16))
+            (nxt[last_index] & 0xFFFF)
+            + (((nxt[last_index] >> 16) << 4) - (nxt[last_index] >> 16))
         )
 
         @def_method(m, self.result)
