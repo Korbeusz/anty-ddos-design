@@ -38,10 +38,8 @@ docs/*.rst
 build/
 benchmark.json
 
-# Pcap files 
-
-*.pcap
-
+filtered_output_pipeline.pcap
+filtered_output.pcap
 *.log
 
 *.pcapng
