@@ -23,14 +23,14 @@ class TestCountMinSketch(TestCaseWithSimulator):
         seed(42)
 
         # ── Design parameters ─────────────────────────────────────
-        self.depth = 4          # number of hash rows
-        self.width = 32        # buckets per row
+        self.depth = 4  # number of hash rows
+        self.width = 32  # buckets per row
         self.counter_width = 32
         self.data_width = 32
 
         # Universal‑hash coefficients (same deterministic defaults as RTL)
         self.hash_params = [(row + 1, 0) for row in range(self.depth)]
-        P = 4_294_967_291  # 2**32 − 5 – largest 32‑bit prime
+        P = 65521  # 2**32 − 5 – largest 32‑bit prime
 
         def h(row: int, x: int) -> int:
             """Software copy of the on‑chip universal hash."""
@@ -54,7 +54,7 @@ class TestCountMinSketch(TestCaseWithSimulator):
             if i == next_clear_at:
                 # -------------- CLEAR ----------------------------
                 self.ops.append(("clear", None))
-                for row in self.model:          # wipe the reference model
+                for row in self.model:  # wipe the reference model
                     for idx in range(self.width):
                         row[idx] = 0
                 next_clear_at += randint(clear_interval // 2, clear_interval * 3 // 2)
@@ -70,7 +70,10 @@ class TestCountMinSketch(TestCaseWithSimulator):
                 # -------------- QUERY ----------------------------
                 data = randint(0, (1 << self.data_width) - 1)
                 self.ops.append(("query", data))
-                est = min(self.model[row_idx][h(row_idx, data)] for row_idx in range(self.depth))
+                est = min(
+                    self.model[row_idx][h(row_idx, data)]
+                    for row_idx in range(self.depth)
+                )
                 self.expected.append({"count": est})
 
     # ──────────────────────────────────────────────────────────────
@@ -105,7 +108,7 @@ class TestCountMinSketch(TestCaseWithSimulator):
             if resp["valid"] == 0:
                 continue  # back‑pressure the FIFO until a real response
             assert resp["count"] == self.expected.popleft()["count"]
-            if resp["count"] !=  0:
+            if resp["count"] != 0:
                 print(f"query_resp: {resp['count']}")
 
     # ──────────────────────────────────────────────────────────────
@@ -113,11 +116,11 @@ class TestCountMinSketch(TestCaseWithSimulator):
     # ──────────────────────────────────────────────────────────────
     def test_randomised(self):
         core = CountMinSketch(
-            depth            = self.depth,
-            width            = self.width,
-            counter_width    = self.counter_width,
-            input_data_width = self.data_width,
-            hash_params      = self.hash_params,
+            depth=self.depth,
+            width=self.width,
+            counter_width=self.counter_width,
+            input_data_width=self.data_width,
+            hash_params=self.hash_params,
         )
         self.dut = SimpleTestCircuit(core)
 

@@ -28,7 +28,7 @@ class CountHashTab(Elaboratable):
         clear(): Clear the hash table. Clearing takes at lest self.size + 2 cycles.
     """
 
-    _P = 4_294_967_291
+    _P = 65521
 
     def __init__(
         self,

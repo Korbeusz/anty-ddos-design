@@ -24,12 +24,12 @@ class TestRollingCountMinSketch(TestCaseWithSimulator):
         seed(42)
 
         # ── Sketch parameters ──────────────────────────────────────────
-        self.depth          = 4
-        self.width          = 32
-        self.counter_width  = 32
-        self.data_width     = 32
-        self.hash_params    = [(row + 1, 0) for row in range(self.depth)]
-        self.P              = 4_294_967_291  # 2**32 − 5 – largest 32‑bit prime
+        self.depth = 4
+        self.width = 32
+        self.counter_width = 32
+        self.data_width = 32
+        self.hash_params = [(row + 1, 0) for row in range(self.depth)]
+        self.P = 65521 
 
         def h(row: int, x: int) -> int:
             """Software copy of the 32‑bit universal hash used on‑chip."""
@@ -38,27 +38,27 @@ class TestRollingCountMinSketch(TestCaseWithSimulator):
 
         # ── Three rolling sketches (reference model) ------------------
         self.model = [[[0] * self.width for _ in range(self.depth)] for _ in range(3)]
-        self.head  = 0         # index (0‒2) of the current UPDATE sketch
-        self.mode  = 0         # 0 = UPDATE, 1 = QUERY
+        self.head = 0  # index (0‒2) of the current UPDATE sketch
+        self.mode = 0  # 0 = UPDATE, 1 = QUERY
 
         # ── Random operation trace ------------------------------------
         self.operation_count = 25_000
-        self.ops: list[tuple[str, int | None]] = []   # (kind, payload)
-        self.expected = deque()                       # queued QUERY outputs
+        self.ops: list[tuple[str, int | None]] = []  # (kind, payload)
+        self.expected = deque()  # queued QUERY outputs
 
         last_change_at = -self.width  # distance from previous change_roles
 
         for i in range(self.operation_count):
             # -------------- Possibly rotate roles --------------------
             if (i - last_change_at) >= self.width and random() < 0.02:
-                self._rotate_reference()              # update the model first
+                self._rotate_reference()  # update the model first
                 self.ops.append(("change_roles", None))
                 last_change_at = i
                 continue
 
             # -------------- Possibly toggle mode ---------------------
             if random() < 0.02:
-                self.mode ^= 1                       # flip UPDATE/QUERY
+                self.mode ^= 1  # flip UPDATE/QUERY
                 self.ops.append(("set_mode", self.mode))
                 continue
 
@@ -74,7 +74,9 @@ class TestRollingCountMinSketch(TestCaseWithSimulator):
                 self.ops.append(("query", data))
                 # ------------ QUERY model ---------------------------
                 q_idx = (self.head + 1) % 3
-                est = min(self.model[q_idx][row][h(row, data)] for row in range(self.depth))
+                est = min(
+                    self.model[q_idx][row][h(row, data)] for row in range(self.depth)
+                )
                 self.expected.append({"count": est})
 
     # ------------------------------------------------------------------
@@ -96,7 +98,7 @@ class TestRollingCountMinSketch(TestCaseWithSimulator):
     async def driver_process(self, sim):
         """Feeds INSERT / QUERY / SET_MODE / CHANGE_ROLES into the DUT."""
         for kind, data in self.ops:
-            while random() >= 0.7:       # random idle cycles
+            while random() >= 0.7:  # random idle cycles
                 await sim.tick()
 
             if kind == "insert" or kind == "query":
@@ -120,7 +122,7 @@ class TestRollingCountMinSketch(TestCaseWithSimulator):
             if resp["valid"] == 0:
                 continue  # back‑pressure until a real response appears
             assert resp["count"] == self.expected.popleft()["count"]
-            if resp['count'] != 0:
+            if resp["count"] != 0:
                 print(f"QUERY: {resp['count']})")
 
     # ------------------------------------------------------------------
@@ -128,11 +130,11 @@ class TestRollingCountMinSketch(TestCaseWithSimulator):
     # ------------------------------------------------------------------
     def test_randomised(self):
         core = RollingCountMinSketch(
-            depth            = self.depth,
-            width            = self.width,
-            counter_width    = self.counter_width,
-            input_data_width = self.data_width,
-            hash_params      = self.hash_params,
+            depth=self.depth,
+            width=self.width,
+            counter_width=self.counter_width,
+            input_data_width=self.data_width,
+            hash_params=self.hash_params,
         )
         self.dut = SimpleTestCircuit(core)
 

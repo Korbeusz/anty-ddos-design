@@ -26,9 +26,9 @@ class TestCountHashTab(TestCaseWithSimulator):
         seed(42)
 
         # ── DUT parameters ────────────────────────────────────────────
-        self.size          = 16     # number of hash buckets
+        self.size = 16  # number of hash buckets
         self.counter_width = 32
-        self.data_width    = 32
+        self.data_width = 32
 
         # ── Random operation trace ------------------------------------
         self.operation_count = 15_000
@@ -40,27 +40,25 @@ class TestCountHashTab(TestCaseWithSimulator):
         self.expected = deque()
 
         # ── Reference model -------------------------------------------
-        P      = 4_294_967_291                     # 2**32 − 5
-        self.a = 1                                 # hash coefficients
+        P = 65521 
+        self.a = 1  # hash coefficients
         self.b = 0
-        self.model = [0] * self.size               # bucket counters
+        self.model = [0] * self.size  # bucket counters
 
-        def h(x: int) -> int:                      # software hash
+        def h(x: int) -> int:  # software hash
             return ((self.a * x + self.b) % P) % self.size
 
         # Sprinkle CLEAR roughly every ~300 ops
         clear_interval = 300
-        next_clear_at  = randint(clear_interval // 2,
-                                 clear_interval * 3 // 2)
+        next_clear_at = randint(clear_interval // 2, clear_interval * 3 // 2)
 
         for i in range(self.operation_count):
             if i == next_clear_at:
                 # ----------- CLEAR ------------------------------------
                 self.ops.append(("clear", None))
-                for idx in range(self.size):       # wipe reference
+                for idx in range(self.size):  # wipe reference
                     self.model[idx] = 0
-                next_clear_at += randint(clear_interval // 2,
-                                          clear_interval * 3 // 2)
+                next_clear_at += randint(clear_interval // 2, clear_interval * 3 // 2)
                 continue
 
             if random() < 0.65:
@@ -74,7 +72,6 @@ class TestCountHashTab(TestCaseWithSimulator):
                 self.ops.append(("query", data))
                 self.expected.append({"count": self.model[h(data)]})
 
-
     # ------------------------------------------------------------------
     #  Test-bench processes
     # ------------------------------------------------------------------
@@ -85,26 +82,24 @@ class TestCountHashTab(TestCaseWithSimulator):
         """
 
         for kind, data in self.ops:
-            while random() >= 0.7:          # idle cycle
+            while random() >= 0.7:  # idle cycle
                 await sim.tick()
 
             if kind == "insert":
                 await self.dut.insert.call_try(sim, {"data": data})
             elif kind == "query":
                 await self.dut.query_req.call_try(sim, {"data": data})
-            else:                           # kind == "clear"
+            else:  # kind == "clear"
                 await self.dut.clear.call_try(sim, {})
                 for idx in range(self.size + 2):
-                    await sim.tick()         # wait for clear to finish
+                    await sim.tick()  # wait for clear to finish
                 print("CLEAR done!")
-
-
 
     async def checker_process(self, sim):
         """
         Pulls QUERY_RESP results and checks them against *expected*,
         inserting random back-pressure so responses queue up.
-        """  
+        """
         while self.expected:
             resp = await self.dut.query_resp.call_try(sim)
             if resp["valid"] == 0:
@@ -119,15 +114,14 @@ class TestCountHashTab(TestCaseWithSimulator):
     def test_randomised(self):
 
         core = CountHashTab(
-            size              = self.size,
-            counter_width     = self.counter_width,
-            input_data_width  = self.data_width,
-            hash_a            = self.a,
-            hash_b            = self.b,
+            size=self.size,
+            counter_width=self.counter_width,
+            input_data_width=self.data_width,
+            hash_a=self.a,
+            hash_b=self.b,
         )
         self.dut = SimpleTestCircuit(core)
 
         with self.run_simulation(self.dut) as sim:
             sim.add_testbench(self.driver_process)
             sim.add_testbench(self.checker_process)
-
