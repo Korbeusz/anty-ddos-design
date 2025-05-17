@@ -30,7 +30,7 @@ class TestCountMinSketch(TestCaseWithSimulator):
 
         # Universal‑hash coefficients (same deterministic defaults as RTL)
         self.hash_params = [(row + 1, 0) for row in range(self.depth)]
-        P = 65521  # 2**32 − 5 – largest 32‑bit prime
+        P = 65521  
 
         def h(row: int, x: int) -> int:
             """Software copy of the on‑chip universal hash."""
@@ -94,7 +94,7 @@ class TestCountMinSketch(TestCaseWithSimulator):
             else:  # kind == "clear"
                 await self.dut.clear.call_try(sim, {})
                 # Allow the DUT time to sweep the memory
-                for _ in range(self.width + 2):
+                for _ in range(self.width + 10):
                     await sim.tick()
 
     # ──────────────────────────────────────────────────────────────

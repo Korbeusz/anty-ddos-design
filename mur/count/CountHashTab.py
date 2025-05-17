@@ -3,6 +3,7 @@ from amaranth import *
 from transactron import *
 from amaranth.lib.memory import Memory as memory
 from transactron.lib import logging
+from mur.count.hash import Hash
 
 log = logging.HardwareLogger("count.counthashtab")
 __all__ = ["CountHashTab"]
@@ -51,6 +52,8 @@ class CountHashTab(Elaboratable):
         self.query_resp = Method(o=[("count", counter_width), ("valid", 1)])
         self.clear = Method()
 
+        self.insert_hash = Hash(input_width=input_data_width, a=hash_a, b=hash_b)
+        self.query_hash = Hash(input_width=input_data_width, a=hash_a, b=hash_b)
         self.hash_a = Signal(32, init=hash_a % self._P)
         self.hash_b = Signal(32, init=hash_b % self._P)
 
@@ -58,69 +61,42 @@ class CountHashTab(Elaboratable):
 
     def elaborate(self, platform):
         m = TModule()
-        m.submodules += self._mem
+        m.submodules += [self._mem, self.insert_hash, self.query_hash]
 
         wr = self._mem.write_port(domain="sync")
         rd = self._mem.read_port(domain="sync", transparent_for=(wr,))
 
-        req_hash_calculating1 = Signal()
-        req_hash_calculating2 = Signal()
-        req_memory_read = Signal()
         req_save = Signal()
         req_ready = Signal()
         req_read_value = Signal(self.counter_width)
-        req_addr_for_read = Signal(range(self.size))
         req_addr2 = Signal(range(self.size))
 
-        insert_hash_calculating1 = Signal()
-        insert_hash_calculating2 = Signal()
-        insert_memory_read = Signal()
         insert_incrementing = Signal()
         insert_memory_write = Signal()
         insert_memory_write_address = Signal(range(self.size))
         insert_memory_write_address2 = Signal(range(self.size))
         insert_incremented_value = Signal(self.counter_width)
-        insert_addr_for_read = Signal(range(self.size))
-
-        req_sum_ab = Signal(64)
-        req_insert_data = Signal(self.input_data_width)
-        insert_sum_ab = Signal(64)
-        insert_data = Signal(self.input_data_width)
 
         clr_running = Signal()
         clr_addr = Signal(range(self.size))
-        clr_waiting1 = Signal()
-        clr_waiting2 = Signal()
+        clr_waiting = Signal(range(16))
         m.d.comb += [
             wr.en.eq(0),
             rd.en.eq(0),
         ]
         m.d.sync += [
-            req_hash_calculating1.eq(0),
-            req_hash_calculating2.eq(req_hash_calculating1),
-            req_memory_read.eq(req_hash_calculating2),
-            req_save.eq(req_memory_read),
+            req_save.eq(0),
             req_ready.eq(req_save),
-            insert_hash_calculating1.eq(0),
-            insert_hash_calculating2.eq(insert_hash_calculating1),
-            insert_memory_read.eq(insert_hash_calculating2),
-            insert_incrementing.eq(insert_memory_read),
+            insert_incrementing.eq(0),
             insert_memory_write.eq(insert_incrementing),
-            clr_waiting1.eq(0),
-            clr_waiting2.eq(clr_waiting1),
         ]
 
-        m.d.sync += [
-            req_sum_ab.eq(self.hash_a * req_insert_data + self.hash_b),
-            req_addr_for_read.eq(req_sum_ab % self._P),
-            insert_sum_ab.eq(self.hash_a * insert_data + self.hash_b),
-            insert_addr_for_read.eq(insert_sum_ab % self._P),
-        ]
-
-        with m.If(req_memory_read):
-
-            m.d.comb += [rd.en.eq(1), rd.addr.eq(req_addr_for_read)]
-            m.d.sync += req_addr2.eq(req_addr_for_read)
+        with Transaction().body(m):
+            res = self.query_hash.result(m)
+            with m.If(res["valid"]):
+                m.d.comb += [rd.en.eq(1), rd.addr.eq(res["hash"])]
+                m.d.sync += req_addr2.eq(res["hash"])
+                m.d.sync += req_save.eq(1)
 
         with m.If(req_save):
             with m.If(
@@ -130,9 +106,12 @@ class CountHashTab(Elaboratable):
             with m.Else():
                 m.d.sync += req_read_value.eq(rd.data)
 
-        with m.If(insert_memory_read):
-            m.d.comb += [rd.en.eq(1), rd.addr.eq(insert_addr_for_read)]
-            m.d.sync += insert_memory_write_address.eq(insert_addr_for_read)
+        with Transaction().body(m):
+            res = self.insert_hash.result(m)
+            with m.If(res["valid"]):
+                m.d.comb += [rd.en.eq(1), rd.addr.eq(res["hash"])]
+                m.d.sync += insert_memory_write_address.eq(res["hash"])
+                m.d.sync += insert_incrementing.eq(1)
 
         with m.If(insert_incrementing):
             with m.If(
@@ -158,8 +137,10 @@ class CountHashTab(Elaboratable):
                 wr.data.eq(insert_incremented_value),
             ]
 
-        with m.If(clr_waiting2):
-            m.d.sync += clr_running.eq(1)
+        with m.If(clr_waiting > 0):
+            m.d.sync += clr_waiting.eq(clr_waiting - 1)
+            with m.If(clr_waiting == 1):
+                m.d.sync += clr_running.eq(1)
         with m.If(clr_running):
             m.d.comb += [
                 wr.en.eq(1),
@@ -173,8 +154,7 @@ class CountHashTab(Elaboratable):
         @def_method(m, self.insert)
         def _(data):
             log.debug(m, True, "INSERT")
-            m.d.sync += insert_hash_calculating1.eq(1)
-            m.d.sync += insert_data.eq(data)
+            self.insert_hash.input(m, data)
 
         @def_method(m, self.query_resp)
         def _():
@@ -183,13 +163,12 @@ class CountHashTab(Elaboratable):
         @def_method(m, self.query_req)
         def _(data):
             log.debug(m, True, "QUERY")
-            m.d.sync += req_hash_calculating1.eq(1)
-            m.d.sync += req_insert_data.eq(data)
+            self.query_hash.input(m, data)
 
         @def_method(m, self.clear)
         def _():
             log.debug(m, True, "CLEAR")
             m.d.sync += clr_addr.eq(0)
-            m.d.sync += clr_waiting1.eq(1)
+            m.d.sync += clr_waiting.eq(10)
 
         return m

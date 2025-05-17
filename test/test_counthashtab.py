@@ -31,7 +31,7 @@ class TestCountHashTab(TestCaseWithSimulator):
         self.data_width = 32
 
         # ── Random operation trace ------------------------------------
-        self.operation_count = 15_000
+        self.operation_count = 20_000
         #               kind          payload
         #   ops[i]  = ("insert"|"query"|"clear",  data:int | None)
         self.ops: list[tuple[str, int | None]] = []
@@ -40,7 +40,7 @@ class TestCountHashTab(TestCaseWithSimulator):
         self.expected = deque()
 
         # ── Reference model -------------------------------------------
-        P = 65521 
+        P = 65521
         self.a = 1  # hash coefficients
         self.b = 0
         self.model = [0] * self.size  # bucket counters
@@ -91,7 +91,7 @@ class TestCountHashTab(TestCaseWithSimulator):
                 await self.dut.query_req.call_try(sim, {"data": data})
             else:  # kind == "clear"
                 await self.dut.clear.call_try(sim, {})
-                for idx in range(self.size + 2):
+                for idx in range(self.size + 10):
                     await sim.tick()  # wait for clear to finish
                 print("CLEAR done!")
 
