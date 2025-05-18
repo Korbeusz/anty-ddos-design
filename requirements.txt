@@ -1,5 +1,6 @@
 transactron @ git+https://github.com/kuznia-rdzeni/transactron.git@414def461c58ec58b90813fface2a959146e1f82
 
+amaranth==0.5.4
 pyright==1.1.322
 flake8==7.0.0
 black==24.4.2
@@ -7,6 +8,6 @@ pytest==8.0.0
 pytest-xdist==3.5.0
 parameterized==0.8.1
 pre-commit==2.16.0
-
+scapy == 2.6.1
 # missing transactron.testing deps
 hypothesis==6.99.6
