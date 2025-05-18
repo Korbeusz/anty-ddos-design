@@ -5,6 +5,7 @@ rpkgs.mkShell {
     nativeBuildInputs = with spkgs;  [ ];
     buildInputs =  [ ];
     shellHook = ''
+        python -m venv .venv
         . .venv/bin/activate
         pip install --quiet -r requirements.txt
     '';
