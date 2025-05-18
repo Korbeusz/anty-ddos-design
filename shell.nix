@@ -6,6 +6,7 @@ rpkgs.mkShell {
     buildInputs =  [ ];
     shellHook = ''
         . .venv/bin/activate
+        pip install --quiet -r requirements.txt
     '';
 }
 
