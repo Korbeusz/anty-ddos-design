@@ -42,20 +42,20 @@ class TestCMSVolController(TestCaseWithSimulator):
         if not pkts:
             raise RuntimeError("Pcap capture is empty or missing.")
 
-        self.inputs: list[dict] = []          # queued SRC/DST/DPORT/LEN tuples
-        self.packets: list = []               # original packet order
-        self.filtered: list = []              # packets kept by the DUT
+        self.inputs: list[dict] = []  # queued SRC/DST/DPORT/LEN tuples
+        self.packets: list = []  # original packet order
+        self.filtered: list = []  # packets kept by the DUT
 
-        base_ts = pkts[0].time                # zero‑offset timestamps
+        base_ts = pkts[0].time  # zero‑offset timestamps
         for p in pkts:
             # Only IPv4 is relevant for this TB
             if not p.haslayer(IP):
                 continue
 
             ip = p[IP]
-            src_ip  = int(IPv4Address(ip.src))
-            dst_ip  = int(IPv4Address(ip.dst))
-            tot_len = int(ip.len) & 0xFFFF     # 16‑bit total‑length field
+            src_ip = int(IPv4Address(ip.src))
+            dst_ip = int(IPv4Address(ip.dst))
+            tot_len = int(ip.len) & 0xFFFF  # 16‑bit total‑length field
 
             # --- Destination‑port (only UDP/TCP) -----------------------
             dport = 0
@@ -65,18 +65,20 @@ class TestCMSVolController(TestCaseWithSimulator):
                 dport = int(p[TCP].dport) & 0xFFFF
 
             # Record stimulus + reference packet + timestamp
-            self.inputs.append({
-                "src":       src_ip,
-                "dst":       dst_ip,
-                "dport":     dport,
-                "tot_len":   tot_len,
-                "timestamp": p.time - base_ts,
-            })
+            self.inputs.append(
+                {
+                    "src": src_ip,
+                    "dst": dst_ip,
+                    "dport": dport,
+                    "tot_len": tot_len,
+                    "timestamp": p.time - base_ts,
+                }
+            )
             self.packets.append(p)
 
         # Shared position counters for coroutines
-        self._in_idx  = 0      # next packet to *send* into the DUT
-        self._out_idx = 0      # next packet to *decide* upon from the DUT
+        self._in_idx = 0  # next packet to *send* into the DUT
+        self._out_idx = 0  # next packet to *decide* upon from the DUT
 
     # ------------------------------------------------------------------
     #  Driver – pushes SRC/DST/DPORT/LEN quadruples into the DUT
@@ -94,12 +96,11 @@ class TestCMSVolController(TestCaseWithSimulator):
                 continue
 
             # Push one full quadruple atomically (CallTrigger chains)
-            await CallTrigger(sim) \
-                .call(self.dut.push_a, {"data": cur["src"]}) \
-                .call(self.dut.push_b, {"data": cur["dst"]}) \
-                .call(self.dut.push_c, {"data": cur["dport"]}) \
-                .call(self.dut.push_s, {"data": cur["tot_len"]}) \
-                .until_all_done()
+            await CallTrigger(sim).call(self.dut.push_a, {"data": cur["src"]}).call(
+                self.dut.push_b, {"data": cur["dst"]}
+            ).call(self.dut.push_c, {"data": cur["dport"]}).call(
+                self.dut.push_s, {"data": cur["tot_len"]}
+            ).until_all_done()
 
             self._in_idx += 1
             cycle += 1
@@ -109,7 +110,7 @@ class TestCMSVolController(TestCaseWithSimulator):
     # ------------------------------------------------------------------
     async def _sink_process(self, sim):
         while self._out_idx < len(self.packets):
-            resp = await self.dut.out.call(sim)           # back‑pressure
+            resp = await self.dut.out.call(sim)  # back‑pressure
 
             val = int(resp["data"])
             print(f"out: {val}")
@@ -135,7 +136,7 @@ class TestCMSVolController(TestCaseWithSimulator):
             width=16_384,
             counter_width=32,
             window=int(1 / CYCLE_TIME),
-            volume_threshold=100_000,   # renamed parameter
+            volume_threshold=100_000,  # renamed parameter
             fifo_depth=16,
         )
         self.dut = SimpleTestCircuit(core)

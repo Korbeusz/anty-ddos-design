@@ -8,7 +8,9 @@ def swap_endianess(m: ModuleLike, s: Value):
     r = Signal.like(s)
 
     for i in range(s.shape().width // 8):
-        m.d.comb += r.word_select(i, 8).eq(s.word_select(s.shape().width // 8 - i - 1, 8))
+        m.d.comb += r.word_select(i, 8).eq(
+            s.word_select(s.shape().width // 8 - i - 1, 8)
+        )
 
     return r
 

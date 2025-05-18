@@ -43,8 +43,12 @@ class ParserStepTop(Component):
         m.submodules.parser0_pout = parser0_pout = Connect(EthernetParser.LAYOUT)
         m.submodules.parser1_pout = parser1_pout = Connect(EthernetParser.LAYOUT)
 
-        m.submodules.parser0 = EthernetParser(parser0_in.read, parser0_out.write, parser0_pout.write)
-        m.submodules.parser1 = EthernetParser(parser1_in.read, parser1_out.write, parser1_pout.write)
+        m.submodules.parser0 = EthernetParser(
+            parser0_in.read, parser0_out.write, parser0_pout.write
+        )
+        m.submodules.parser1 = EthernetParser(
+            parser1_in.read, parser1_out.write, parser1_pout.write
+        )
 
         m.submodules.aligner = aligner = ParserAligner()
 

@@ -28,14 +28,26 @@ class IntelAvalonRxAdapter(Component):
 
         fifo_layout = StructLayout({"data": Params().word_bits, "error": 1, "eop": 6})
 
-        m.submodules.rx_fifo = rx_fifo = AsyncFIFO(width=fifo_layout.size, depth=2, r_domain="sync", w_domain="rx")
+        m.submodules.rx_fifo = rx_fifo = AsyncFIFO(
+            width=fifo_layout.size, depth=2, r_domain="sync", w_domain="rx"
+        )
 
         fifo_in = Signal(fifo_layout)
         m.d.comb += fifo_in.data.eq(self.rx.l8_rx_data)
-        m.d.comb += fifo_in.error.eq(self.rx.l8.rx_error.any() & self.rx.l8_rx_endofpacket)
-        m.d.comb += fifo_in.eop.eq(Mux(self.rx.l8_rx_endofpacket, Params().word_bits // 8 - self.rx.l8_rx_empty - 1, 0))
+        m.d.comb += fifo_in.error.eq(
+            self.rx.l8.rx_error.any() & self.rx.l8_rx_endofpacket
+        )
+        m.d.comb += fifo_in.eop.eq(
+            Mux(
+                self.rx.l8_rx_endofpacket,
+                Params().word_bits // 8 - self.rx.l8_rx_empty - 1,
+                0,
+            )
+        )
 
-        m.d.comb += rx_fifo.w_data.eq(swap_endianess(m, fifo_in))  # start at MSB -> start at LSB
+        m.d.comb += rx_fifo.w_data.eq(
+            swap_endianess(m, fifo_in)
+        )  # start at MSB -> start at LSB
         m.d.comb += rx_fifo.w_en.eq(self.rx.l8_rx_valid)
 
         @def_method(m, self.read, ready=rx_fifo.r_rdy)
@@ -70,7 +82,9 @@ class IntelAvalonTxAdapter(Component):
 
         fifo_layout = StructLayout({"data": Params().word_bits, "eop": 6})
 
-        m.submodules.tx_fifo = tx_fifo = AsyncFIFO(width=fifo_layout.size, depth=2, r_domain="sync", w_domain="tx")
+        m.submodules.tx_fifo = tx_fifo = AsyncFIFO(
+            width=fifo_layout.size, depth=2, r_domain="sync", w_domain="tx"
+        )
 
         fifo_out = View(fifo_layout, tx_fifo.r_data)
 

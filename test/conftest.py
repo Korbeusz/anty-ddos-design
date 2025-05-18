@@ -12,9 +12,19 @@ def pytest_addoption(parser: pytest.Parser):
         choices=["cocotb", "pysim"],
         help="Simulation backend for regression tests",
     )
-    group.addoption("--coreblocks-traces", action="store_true", help="Generate traces from regression tests")
-    group.addoption("--coreblocks-profile", action="store_true", help="Write execution profiles")
-    group.addoption("--coreblocks-list", action="store_true", help="List all tests in flatten format.")
+    group.addoption(
+        "--coreblocks-traces",
+        action="store_true",
+        help="Generate traces from regression tests",
+    )
+    group.addoption(
+        "--coreblocks-profile", action="store_true", help="Write execution profiles"
+    )
+    group.addoption(
+        "--coreblocks-list",
+        action="store_true",
+        help="List all tests in flatten format.",
+    )
     group.addoption(
         "--coreblocks-test-name",
         action="store",
@@ -27,11 +37,21 @@ def pytest_addoption(parser: pytest.Parser):
         type=int,
         help="Number of tests to start. If less than number of all selected tests, then starts only subset of them.",
     )
-    group.addoption("--coreblocks-log-filter", default=".*", action="store", help="Regexp used to filter out logs.")
+    group.addoption(
+        "--coreblocks-log-filter",
+        default=".*",
+        action="store",
+        help="Regexp used to filter out logs.",
+    )
 
 
 def generate_unittestname(item: pytest.Item) -> str:
-    full_name = ".".join(map(lambda s: s[:-3] if s[-3:] == ".py" else s, map(lambda x: x.name, item.listchain())))
+    full_name = ".".join(
+        map(
+            lambda s: s[:-3] if s[-3:] == ".py" else s,
+            map(lambda x: x.name, item.listchain()),
+        )
+    )
     return full_name
 
 
@@ -57,7 +77,9 @@ def pytest_runtestloop(session: pytest.Session) -> Optional[bool]:
     return None
 
 
-def deselect_based_on_flatten_name(items: list[pytest.Item], config: pytest.Config) -> None:
+def deselect_based_on_flatten_name(
+    items: list[pytest.Item], config: pytest.Config
+) -> None:
     coreblocks_test_name = config.getoption("coreblocks_test_name")
     if not isinstance(coreblocks_test_name, str):
         return
@@ -89,7 +111,9 @@ def deselect_based_on_count(items: list[pytest.Item], config: pytest.Config) -> 
         items[:] = remaining
 
 
-def pytest_collection_modifyitems(items: list[pytest.Item], config: pytest.Config) -> None:
+def pytest_collection_modifyitems(
+    items: list[pytest.Item], config: pytest.Config
+) -> None:
     deselect_based_on_flatten_name(items, config)
     deselect_based_on_count(items, config)
 
@@ -106,7 +130,11 @@ def pytest_runtest_setup(item: pytest.Item):
         os.environ["__TRANSACTRON_PROFILE"] = "1"
 
     log_filter = item.config.getoption("--coreblocks-log-filter")
-    os.environ["__TRANSACTRON_LOG_FILTER"] = ".*" if not isinstance(log_filter, str) else log_filter
+    os.environ["__TRANSACTRON_LOG_FILTER"] = (
+        ".*" if not isinstance(log_filter, str) else log_filter
+    )
 
     log_level = item.config.getoption("--log-level")
-    os.environ["__TRANSACTRON_LOG_LEVEL"] = "WARNING" if not isinstance(log_level, str) else log_level
+    os.environ["__TRANSACTRON_LOG_LEVEL"] = (
+        "WARNING" if not isinstance(log_level, str) else log_level
+    )

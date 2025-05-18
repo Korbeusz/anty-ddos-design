@@ -39,17 +39,16 @@ from pathlib import Path
 def parse_args() -> argparse.Namespace:
     """Parse command‑line arguments."""
     parser = argparse.ArgumentParser(
-        description="Sum IPv4 total length per time bin from a pcap capture.")
-    parser.add_argument(
-        "pcap",
-        type=Path,
-        help="Input pcap file (e.g., capture.pcap)")
+        description="Sum IPv4 total length per time bin from a pcap capture."
+    )
+    parser.add_argument("pcap", type=Path, help="Input pcap file (e.g., capture.pcap)")
     parser.add_argument(
         "-b",
         "--bin-size",
         type=float,
         default=1.0,
-        help="Width of each time bin in seconds (default: 1.0)")
+        help="Width of each time bin in seconds (default: 1.0)",
+    )
     return parser.parse_args()
 
 

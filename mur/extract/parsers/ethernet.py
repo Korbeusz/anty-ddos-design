@@ -51,13 +51,18 @@ class EthernetParser(Elaboratable):
             m.d.av_comb += [
                 select_field_be(m, parsed.dst_mac, data, 0),
                 select_field_be(m, parsed.src_mac, data, 6 * 8),
-                
             ]
 
-            m.d.av_comb += parsed.vlan_v.eq(swap_endianess(m, data.bit_select(12 * 8, 2 * 8)) == 0x8100)
+            m.d.av_comb += parsed.vlan_v.eq(
+                swap_endianess(m, data.bit_select(12 * 8, 2 * 8)) == 0x8100
+            )
 
-            m.d.av_comb += select_field_be(m, parsed.vlan, Mux(parsed.vlan_v,data, 0), 14 * 8)
-            m.d.av_comb += select_field_be(m, parsed.ethertype, data, Mux(parsed.vlan_v, 16 * 8, 12 * 8))
+            m.d.av_comb += select_field_be(
+                m, parsed.vlan, Mux(parsed.vlan_v, data, 0), 14 * 8
+            )
+            m.d.av_comb += select_field_be(
+                m, parsed.ethertype, data, Mux(parsed.vlan_v, 16 * 8, 12 * 8)
+            )
 
             proto_out = Signal(self.params.next_proto_bits)
             with m.Switch(parsed.ethertype):
@@ -70,11 +75,15 @@ class EthernetParser(Elaboratable):
                 with m.Default():
                     m.d.av_comb += proto_out.eq(self.ProtoOut.UNKNOWN)
 
-            m.d.sync += parsing_finished.eq(~end_of_packet)  # end of packet is always needed if module seen start of it
+            m.d.sync += parsing_finished.eq(
+                ~end_of_packet
+            )  # end of packet is always needed if module seen start of it
 
             packet_length = Mux(parsed.vlan_v, 18, 14)
 
-            m.d.av_comb += runt_packet.eq((packet_length > end_of_packet_len) & end_of_packet)
+            m.d.av_comb += runt_packet.eq(
+                (packet_length > end_of_packet_len) & end_of_packet
+            )
 
             with m.If(~parsing_finished):
                 self.push_parsed(
@@ -88,7 +97,7 @@ class EthernetParser(Elaboratable):
             # error_drop -> bypass path, qo shouldn't be considered
             # now are there any recoverable errors that we want to report? not for now? what to do with them
             # two kinds of recoverable erros -> one keep offset to next header known and other not. Should be handled differently
-            log.debug(m,True, "EthernetParser step done")
+            log.debug(m, True, "EthernetParser step done")
             return {
                 "data": data,
                 "octets_consumed": packet_length,

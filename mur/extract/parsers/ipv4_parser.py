@@ -9,32 +9,34 @@ from mur.utils import select_field_be
 from mur.extract.interfaces import ProtoParserLayouts
 
 from enum import IntFlag, auto
+
 log = logging.HardwareLogger("parser.ipv4")
+
 
 class IPv4Parser(Elaboratable):
     class ResultLayouts:
         def __init__(self):
             self.fields = make_layout(
-                ("version", 4),          # Bits 0-3
-                ("header_length", 4),    # Bits 4-7
+                ("version", 4),  # Bits 0-3
+                ("header_length", 4),  # Bits 4-7
                 ("type_of_service", 8),  # Bits 8-15
-                ("total_length", 16),    # Bits 16-31
+                ("total_length", 16),  # Bits 16-31
                 ("identification", 16),  # Bits 32-47
-                ("flags", 3),            # Bits 48-50
-                ("fragment_offset", 13), # Bits 51-63
-                ("time_to_live", 8),     # Bits 64-71
-                ("protocol", 8),         # Bits 72-79
-                ("header_checksum", 16), # Bits 80-95
-                ("source_ip", 32),       # Bits 96-127
+                ("flags", 3),  # Bits 48-50
+                ("fragment_offset", 13),  # Bits 51-63
+                ("time_to_live", 8),  # Bits 64-71
+                ("protocol", 8),  # Bits 72-79
+                ("header_checksum", 16),  # Bits 80-95
+                ("source_ip", 32),  # Bits 96-127
                 ("destination_ip", 32),  # Bits 128-159
             )
+
     class ProtoOut(IntFlag):
         UNKNOWN = 0
         ICMP = auto()
         TCP = auto()
         UDP = auto()
-        
-        
+
     def __init__(self, push_parsed: Method):
         self.push_parsed = push_parsed
         self.params = Params()
@@ -57,8 +59,10 @@ class IPv4Parser(Elaboratable):
 
             # Extract version and header_length from the first byte
             m.d.av_comb += parsed.version.eq(first_byte[4:8])  # Bits 4-7 (high nibble)
-            m.d.av_comb += parsed.header_length.eq(first_byte[0:4])  # Bits 0-3 (low nibble)
-            
+            m.d.av_comb += parsed.header_length.eq(
+                first_byte[0:4]
+            )  # Bits 0-3 (low nibble)
+
             # Calculate header length in bytes
             header_length_bytes = parsed.header_length * 4
 
@@ -81,7 +85,9 @@ class IPv4Parser(Elaboratable):
             m.d.av_comb += parsed.fragment_offset.eq(flags_frag[0:13])  # Bits 0-12
 
             # Check for runt packet
-            m.d.av_comb += runt_packet.eq((header_length_bytes > end_of_packet_len) & end_of_packet)
+            m.d.av_comb += runt_packet.eq(
+                (header_length_bytes > end_of_packet_len) & end_of_packet
+            )
             m.d.sync += parsing_finished.eq(~end_of_packet)
 
             with m.If(~parsing_finished):

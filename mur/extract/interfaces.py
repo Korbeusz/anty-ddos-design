@@ -16,7 +16,10 @@ class ProtoParserLayouts:
         Indicates last word of data for packet. (Packet may be empty).
         """
 
-        self.end_of_packet_len = ("end_of_packet_len", range((Params().word_bits // 8) + 1))
+        self.end_of_packet_len = (
+            "end_of_packet_len",
+            range((Params().word_bits // 8) + 1),
+        )
         """
         Number of data octets is end_of_frame packet.
         May be 0 for no data. Ignored when end_of_packet not set

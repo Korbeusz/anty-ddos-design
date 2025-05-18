@@ -12,8 +12,11 @@ from scapy.all import rdpcap
 from random import randint, random, seed
 from transactron.lib import logging
 from transactron.lib.simultaneous import condition
+
 log = logging.HardwareLogger("test.construction")
 CYCLE_TIME = 0.0005
+
+
 # ------------------------------------------------------------
 # DUT wrapper: Ethernet → Aligner → IPv4 → Aligner → UDP/TCP
 # ------------------------------------------------------------
@@ -36,26 +39,26 @@ class parser_aligner(Elaboratable):
         lay32 = [("data", 32)]
         lay16 = [("data", 16)]
 
-        self.ip_src_fifo   = BasicFifo(lay32, 16)
-        self.ip_dst_fifo   = BasicFifo(lay32, 16)
-        self.ip_len_fifo   = BasicFifo(lay16, 16)
+        self.ip_src_fifo = BasicFifo(lay32, 16)
+        self.ip_dst_fifo = BasicFifo(lay32, 16)
+        self.ip_len_fifo = BasicFifo(lay16, 16)
         self.dst_port_fifo = BasicFifo(lay16, 16)
 
         # Expose *read* side as handy Methods for the TB -----------------
-        self.get_src_ip   = self.ip_src_fifo.read
-        self.get_dst_ip   = self.ip_dst_fifo.read
-        self.get_tot_len  = self.ip_len_fifo.read
+        self.get_src_ip = self.ip_src_fifo.read
+        self.get_dst_ip = self.ip_dst_fifo.read
+        self.get_tot_len = self.ip_len_fifo.read
         self.get_dst_port = self.dst_port_fifo.read
 
         # Stages ---------------------------------------------------------
         # Ethernet parser is wired with a *no‑op* push method because no
         # Ethernet‑level fields are checked in this upgraded TB.
-        self.eth_parser  = EthernetParser(push_parsed=self._push_dummy())
-        self.aligner1    = ParserAligner()
-        self.ip_parser   = IPv4Parser(push_parsed=self._push_parsed_ip())
-        self.aligner2    = ParserAligner()
-        self.udp_parser  = UDPParser(push_parsed=self._push_parsed_udp())
-        self.tcp_parser  = TCPParser(push_parsed=self._push_parsed_tcp())
+        self.eth_parser = EthernetParser(push_parsed=self._push_dummy())
+        self.aligner1 = ParserAligner()
+        self.ip_parser = IPv4Parser(push_parsed=self._push_parsed_ip())
+        self.aligner2 = ParserAligner()
+        self.udp_parser = UDPParser(push_parsed=self._push_parsed_udp())
+        self.tcp_parser = TCPParser(push_parsed=self._push_parsed_tcp())
 
         self.dout = self.aligner2.dout
 
@@ -103,16 +106,23 @@ class parser_aligner(Elaboratable):
         # Sub‑modules ----------------------------------------------------
         m.submodules += [
             self.fifo_in,
-            self.eth_parser, self.aligner1,
-            self.ip_parser,  self.aligner2,
-            self.udp_parser, self.tcp_parser,
-            self.ip_src_fifo, self.ip_dst_fifo, self.ip_len_fifo, self.dst_port_fifo,
+            self.eth_parser,
+            self.aligner1,
+            self.ip_parser,
+            self.aligner2,
+            self.udp_parser,
+            self.tcp_parser,
+            self.ip_src_fifo,
+            self.ip_dst_fifo,
+            self.ip_len_fifo,
+            self.dst_port_fifo,
         ]
 
         @def_method(m, self._dummy)
         def _(arg):
             # Dummy method for Ethernet parser
             pass
+
         # IPv4 – save header + stream selected fields into FIFOs ---------
         @def_method(m, self.push_parsed_ip)
         def _(arg):
@@ -136,29 +146,29 @@ class parser_aligner(Elaboratable):
         # ------------------- Streaming datapath ------------------------
         # 1. Ethernet parser -------------------------------------------
         with Transaction().body(m):
-            word0   = self.fifo_in.read(m)
+            word0 = self.fifo_in.read(m)
             eth_out = self.eth_parser.step(m, word0)
             self.aligner1.din(m, eth_out)
-            log.debug(m,True, "Transaction 1")
+            log.debug(m, True, "Transaction 1")
 
         # 2. IPv4 parser -----------------------------------------------
         with Transaction().body(m):
-            al1   = self.aligner1.dout(m)
+            al1 = self.aligner1.dout(m)
             ip_in = {
-                "data":              al1["data"],
-                "end_of_packet":     al1["end_of_packet"],
+                "data": al1["data"],
+                "end_of_packet": al1["end_of_packet"],
                 "end_of_packet_len": al1["end_of_packet_len"],
             }
             ip_out = self.ip_parser.step(m, ip_in)
             self.aligner2.din(m, ip_out)
-            log.debug(m,True, "Transaction 2")
+            log.debug(m, True, "Transaction 2")
 
         # 3. UDP / TCP selection ---------------------------------------
         with Transaction().body(m):
             al2 = self.aligner2.dout(m)
             tr_in = {
-                "data":              al2["data"],
-                "end_of_packet":     al2["end_of_packet"],
+                "data": al2["data"],
+                "end_of_packet": al2["end_of_packet"],
                 "end_of_packet_len": al2["end_of_packet_len"],
             }
             IpProtoOut = IPv4Parser.ProtoOut
@@ -167,26 +177,30 @@ class parser_aligner(Elaboratable):
                     self.udp_parser.step(m, tr_in)
                 with branch(al2["next_proto"] == IpProtoOut.TCP):
                     self.tcp_parser.step(m, tr_in)
-            log.debug(m,True, "Transaction 3")
+            log.debug(m, True, "Transaction 3")
 
         return m
+
 
 def bytes_to_int_le(b: bytes) -> int:
     return int.from_bytes(b, "little")
 
 
 def split_chunks(buf: bytes, size: int = 64):
-    return [(buf[i:i+size]).ljust(size, b"\0") for i in range(0, len(buf), size)] or [b"".ljust(size, b"\0")]
+    return [
+        (buf[i : i + size]).ljust(size, b"\0") for i in range(0, len(buf), size)
+    ] or [b"".ljust(size, b"\0")]
 
 
 # ------------------ L2 / L3 reference parsers ----------------------
+
 
 def parse_ethernet(pkt: bytes):
     parsed = {
         "dst_mac": int.from_bytes(pkt[0:6], "big") if len(pkt) >= 6 else 0,
         "src_mac": int.from_bytes(pkt[6:12], "big") if len(pkt) >= 12 else 0,
-        "vlan":     0,
-        "vlan_v":   0,
+        "vlan": 0,
+        "vlan_v": 0,
         "ethertype": 0,
         "error_drop": 0,
     }
@@ -211,9 +225,23 @@ def parse_ethernet(pkt: bytes):
 
 
 def parse_ipv4(pkt: bytes, ip_off: int):
-    blank = {k: 0 for k in [
-        "version","header_length","type_of_service","total_length","identification","flags",
-        "fragment_offset","time_to_live","protocol","header_checksum","source_ip","destination_ip"]}
+    blank = {
+        k: 0
+        for k in [
+            "version",
+            "header_length",
+            "type_of_service",
+            "total_length",
+            "identification",
+            "flags",
+            "fragment_offset",
+            "time_to_live",
+            "protocol",
+            "header_checksum",
+            "source_ip",
+            "destination_ip",
+        ]
+    }
     parsed = {**blank, "error_drop": 0}
     if len(pkt) < ip_off + 20:  # minimum IPv4 hdr
         parsed["error_drop"] = 1
@@ -228,22 +256,24 @@ def parse_ipv4(pkt: bytes, ip_off: int):
         parsed["error_drop"] = 1
         return parsed
 
-    parsed["type_of_service"] = pkt[ip_off+1]
-    parsed["total_length"] = int.from_bytes(pkt[ip_off+2:ip_off+4], "big")
-    parsed["identification"] = int.from_bytes(pkt[ip_off+4:ip_off+6], "big")
-    flags_frag = int.from_bytes(pkt[ip_off+6:ip_off+8], "big")
+    parsed["type_of_service"] = pkt[ip_off + 1]
+    parsed["total_length"] = int.from_bytes(pkt[ip_off + 2 : ip_off + 4], "big")
+    parsed["identification"] = int.from_bytes(pkt[ip_off + 4 : ip_off + 6], "big")
+    flags_frag = int.from_bytes(pkt[ip_off + 6 : ip_off + 8], "big")
     parsed["flags"] = flags_frag >> 13
     parsed["fragment_offset"] = flags_frag & 0x1FFF
-    parsed["time_to_live"] = pkt[ip_off+8]
-    proto = pkt[ip_off+9]
+    parsed["time_to_live"] = pkt[ip_off + 8]
+    proto = pkt[ip_off + 9]
     parsed["protocol"] = proto
-    parsed["header_checksum"] = int.from_bytes(pkt[ip_off+10:ip_off+12], "big")
-    parsed["source_ip"] = int.from_bytes(pkt[ip_off+12:ip_off+16], "big")
-    parsed["destination_ip"] = int.from_bytes(pkt[ip_off+16:ip_off+20], "big")
+    parsed["header_checksum"] = int.from_bytes(pkt[ip_off + 10 : ip_off + 12], "big")
+    parsed["source_ip"] = int.from_bytes(pkt[ip_off + 12 : ip_off + 16], "big")
+    parsed["destination_ip"] = int.from_bytes(pkt[ip_off + 16 : ip_off + 20], "big")
     parsed["header_len"] = hdr_bytes
     return parsed
 
+
 # ------------------ L4 reference parsers ---------------------------
+
 
 def parse_udp(pkt: bytes, l4_off: int):
     blank = {k: 0 for k in ["source_port", "destination_port", "length", "checksum"]}
@@ -251,35 +281,49 @@ def parse_udp(pkt: bytes, l4_off: int):
     if len(pkt) < l4_off + 8:
         parsed["error_drop"] = 1
         return parsed
-    parsed["source_port"]      = int.from_bytes(pkt[l4_off:l4_off+2], "big")
-    parsed["destination_port"] = int.from_bytes(pkt[l4_off+2:l4_off+4], "big")
-    parsed["length"]           = int.from_bytes(pkt[l4_off+4:l4_off+6], "big")
-    parsed["checksum"]         = int.from_bytes(pkt[l4_off+6:l4_off+8], "big")
-    parsed["header_len"]       = 8
+    parsed["source_port"] = int.from_bytes(pkt[l4_off : l4_off + 2], "big")
+    parsed["destination_port"] = int.from_bytes(pkt[l4_off + 2 : l4_off + 4], "big")
+    parsed["length"] = int.from_bytes(pkt[l4_off + 4 : l4_off + 6], "big")
+    parsed["checksum"] = int.from_bytes(pkt[l4_off + 6 : l4_off + 8], "big")
+    parsed["header_len"] = 8
     return parsed
 
 
 def parse_tcp(pkt: bytes, l4_off: int):
-    blank = {k: 0 for k in [
-        "source_port", "destination_port", "sequence_number", "acknowledgment_number",
-        "data_offset", "reserved", "flags", "window_size", "checksum", "urgent_pointer"]}
+    blank = {
+        k: 0
+        for k in [
+            "source_port",
+            "destination_port",
+            "sequence_number",
+            "acknowledgment_number",
+            "data_offset",
+            "reserved",
+            "flags",
+            "window_size",
+            "checksum",
+            "urgent_pointer",
+        ]
+    }
     parsed = {**blank, "error_drop": 0}
     if len(pkt) < l4_off + 20:  # minimum TCP header
         parsed["error_drop"] = 1
         return parsed
 
-    parsed["source_port"]          = int.from_bytes(pkt[l4_off:l4_off+2], "big")
-    parsed["destination_port"]     = int.from_bytes(pkt[l4_off+2:l4_off+4], "big")
-    parsed["sequence_number"]      = int.from_bytes(pkt[l4_off+4:l4_off+8], "big")
-    parsed["acknowledgment_number"] = int.from_bytes(pkt[l4_off+8:l4_off+12], "big")
+    parsed["source_port"] = int.from_bytes(pkt[l4_off : l4_off + 2], "big")
+    parsed["destination_port"] = int.from_bytes(pkt[l4_off + 2 : l4_off + 4], "big")
+    parsed["sequence_number"] = int.from_bytes(pkt[l4_off + 4 : l4_off + 8], "big")
+    parsed["acknowledgment_number"] = int.from_bytes(
+        pkt[l4_off + 8 : l4_off + 12], "big"
+    )
 
-    byte12 = pkt[l4_off+12]
+    byte12 = pkt[l4_off + 12]
     parsed["data_offset"] = byte12 >> 4
-    parsed["reserved"]    = byte12 & 0x0F
-    parsed["flags"]       = pkt[l4_off+13]
-    parsed["window_size"] = int.from_bytes(pkt[l4_off+14:l4_off+16], "big")
-    parsed["checksum"]    = int.from_bytes(pkt[l4_off+16:l4_off+18], "big")
-    parsed["urgent_pointer"] = int.from_bytes(pkt[l4_off+18:l4_off+20], "big")
+    parsed["reserved"] = byte12 & 0x0F
+    parsed["flags"] = pkt[l4_off + 13]
+    parsed["window_size"] = int.from_bytes(pkt[l4_off + 14 : l4_off + 16], "big")
+    parsed["checksum"] = int.from_bytes(pkt[l4_off + 16 : l4_off + 18], "big")
+    parsed["urgent_pointer"] = int.from_bytes(pkt[l4_off + 18 : l4_off + 20], "big")
 
     hdr_len = parsed["data_offset"] * 4
     parsed["header_len"] = hdr_len
@@ -287,22 +331,27 @@ def parse_tcp(pkt: bytes, l4_off: int):
         parsed["error_drop"] = 1
     return parsed
 
+
 class TestEthernetIPv4TCPUDPParser(TestCaseWithSimulator):
     def setup_method(self):
         seed(42)
         pkts = rdpcap("example_pcaps/flows.pcap")
         print("Reading done")
 
-        self.inputs    = []
-        self.exp_eth   = []
-        self.exp_ip    = []
-        self.exp_udp   = []  # Expected UDP headers in arrival order
-        self.exp_tcp   = []  # Expected TCP headers in arrival order
+        self.inputs = []
+        self.exp_eth = []
+        self.exp_ip = []
+        self.exp_udp = []  # Expected UDP headers in arrival order
+        self.exp_tcp = []  # Expected TCP headers in arrival order
         base_sc = pkts[0].time
         for sc in pkts:
             raw = bytes(sc)
             eth = parse_ethernet(raw)
-            ip  = parse_ipv4(raw, eth.get("header_len", 0)) if eth["ethertype"] == 0x0800 else {"error_drop":1}
+            ip = (
+                parse_ipv4(raw, eth.get("header_len", 0))
+                if eth["ethertype"] == 0x0800
+                else {"error_drop": 1}
+            )
 
             # --- push raw words into FIFO -----------------------
             pkt_ts = sc.time - base_sc
@@ -311,12 +360,14 @@ class TestEthernetIPv4TCPUDPParser(TestCaseWithSimulator):
                 last = i == len(in_chunks) - 1
                 eop_len = len(raw) % 64 if last else 0
                 eop_len = 64 if last and eop_len == 0 and raw else eop_len
-                self.inputs.append({
-                    "data": bytes_to_int_le(ch),
-                    "end_of_packet": last,
-                    "end_of_packet_len": eop_len,
-                    "timestamp": pkt_ts,
-                })
+                self.inputs.append(
+                    {
+                        "data": bytes_to_int_le(ch),
+                        "end_of_packet": last,
+                        "end_of_packet_len": eop_len,
+                        "timestamp": pkt_ts,
+                    }
+                )
 
             # Expected headers -----------------------------------
             self.exp_eth.append(eth)
@@ -341,7 +392,7 @@ class TestEthernetIPv4TCPUDPParser(TestCaseWithSimulator):
                 await sim.tick()
                 cycle += 1
                 continue
-            
+
             word = {k: v for k, v in self.inputs[0].items() if k != "timestamp"}
             res = await self.eptc.din.call_try(sim, word)
             cycle += 1
@@ -349,7 +400,6 @@ class TestEthernetIPv4TCPUDPParser(TestCaseWithSimulator):
                 self.inputs.pop(0)
             else:
                 print("din waiting")
-
 
     async def _check_parsed(self, sim):
         udp_idx = 0
@@ -362,8 +412,13 @@ class TestEthernetIPv4TCPUDPParser(TestCaseWithSimulator):
 
             if ip.get("error_drop", 1) == 0:
                 # --- NEW: check src/dst/len via FIFOs ----------
-                got_src, got_dst, got_len = await CallTrigger(sim)\
-                    .call(self.eptc.get_src_ip).call(self.eptc.get_dst_ip).call(self.eptc.get_tot_len).until_all_done()
+                got_src, got_dst, got_len = (
+                    await CallTrigger(sim)
+                    .call(self.eptc.get_src_ip)
+                    .call(self.eptc.get_dst_ip)
+                    .call(self.eptc.get_tot_len)
+                    .until_all_done()
+                )
                 assert int(got_src["data"]) == ip["source_ip"]
                 assert int(got_dst["data"]) == ip["destination_ip"]
                 assert int(got_len["data"]) == ip["total_length"]

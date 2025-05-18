@@ -29,7 +29,7 @@ class TestRollingCountMinSketch(TestCaseWithSimulator):
         self.counter_width = 32
         self.data_width = 32
         self.hash_params = [(row + 1, 0) for row in range(self.depth)]
-        self.P = 65521 
+        self.P = 65521
 
         def h(row: int, x: int) -> int:
             """Software copy of the 32‑bit universal hash used on‑chip."""

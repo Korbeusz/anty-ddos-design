@@ -13,7 +13,8 @@ Requires:  scapy  (pip install scapy)
 """
 
 import argparse
-from scapy.all import rdpcap, wrpcap, PcapReader   # noqa: F401
+from scapy.all import rdpcap, wrpcap, PcapReader  # noqa: F401
+
 
 # ---------------------------------------------------------------------------
 # 1) EDIT THIS FUNCTION to change how timestamps are generated
@@ -22,6 +23,8 @@ from scapy.all import rdpcap, wrpcap, PcapReader   # noqa: F401
 # ---------------------------------------------------------------------------
 def time_func(idx: int) -> float:
     return idx * 0.00005
+
+
 # ---------------------------------------------------------------------------
 
 

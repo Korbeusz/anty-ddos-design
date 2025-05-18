@@ -30,7 +30,7 @@ class TestCountMinSketch(TestCaseWithSimulator):
 
         # Universal‑hash coefficients (same deterministic defaults as RTL)
         self.hash_params = [(row + 1, 0) for row in range(self.depth)]
-        P = 65521  
+        P = 65521
 
         def h(row: int, x: int) -> int:
             """Software copy of the on‑chip universal hash."""

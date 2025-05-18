@@ -19,7 +19,8 @@ class TestAligner(TestCaseWithSimulator):
         self.octets_in_word = self.params.word_bits // 8
 
         self.packets = [
-            [randint(0x0, 0xFF) for _ in range(randint(1, self.octets_in_word * 3))] for _ in range(self.packets)
+            [randint(0x0, 0xFF) for _ in range(randint(1, self.octets_in_word * 3))]
+            for _ in range(self.packets)
         ]
 
         self.inputq = deque()
@@ -27,7 +28,9 @@ class TestAligner(TestCaseWithSimulator):
 
         def data_word_from_index(p: list[int], i: int):
             res = 0
-            for si in range(i * self.octets_in_word, min(len(p), (i + 1) * self.octets_in_word)):
+            for si in range(
+                i * self.octets_in_word, min(len(p), (i + 1) * self.octets_in_word)
+            ):
                 res |= p[si] << 8 * (si % self.octets_in_word)
             return res
 
@@ -36,11 +39,19 @@ class TestAligner(TestCaseWithSimulator):
             return (eop, len(p) - i * self.octets_in_word if eop else 0)
 
         for p in self.packets:
-            fully_consumed_words = randint(0, max(0, (len(p) // self.octets_in_word) - 1))
+            fully_consumed_words = randint(
+                0, max(0, (len(p) // self.octets_in_word) - 1)
+            )
             partial_consumed_length_octets = (
                 0
                 if len(p) < 1
-                else randint(1, min(self.octets_in_word, len(p) - fully_consumed_words * self.octets_in_word))
+                else randint(
+                    1,
+                    min(
+                        self.octets_in_word,
+                        len(p) - fully_consumed_words * self.octets_in_word,
+                    ),
+                )
             )
             next_proto = randint(0, 1)
             error = randint(0, 2) == 0
@@ -62,15 +73,22 @@ class TestAligner(TestCaseWithSimulator):
                 {
                     "data": data_word_from_index(p, fully_consumed_words),
                     "octets_consumed": partial_consumed_length_octets,
-                    "end_of_packet": end_of_packet_from_index(p, fully_consumed_words)[0],
-                    "end_of_packet_len": end_of_packet_from_index(p, fully_consumed_words)[1],
+                    "end_of_packet": end_of_packet_from_index(p, fully_consumed_words)[
+                        0
+                    ],
+                    "end_of_packet_len": end_of_packet_from_index(
+                        p, fully_consumed_words
+                    )[1],
                     "extract_range_end": 1,
                     "next_proto": next_proto,
                     "error_drop": error,
                 }
             )
 
-            for i in range(fully_consumed_words + 1, (len(p) + self.octets_in_word - 1) // self.octets_in_word):
+            for i in range(
+                fully_consumed_words + 1,
+                (len(p) + self.octets_in_word - 1) // self.octets_in_word,
+            ):
                 self.inputq.append(
                     {
                         "data": data_word_from_index(p, i),
@@ -84,19 +102,31 @@ class TestAligner(TestCaseWithSimulator):
                 )
 
             if not error:
-                remaining = p[fully_consumed_words * self.octets_in_word + partial_consumed_length_octets:]
-                for i in range((len(remaining) + self.octets_in_word - 1) // self.octets_in_word):
+                remaining = p[
+                    fully_consumed_words * self.octets_in_word
+                    + partial_consumed_length_octets :
+                ]
+                for i in range(
+                    (len(remaining) + self.octets_in_word - 1) // self.octets_in_word
+                ):
                     self.outputq.append(
                         {
                             "data": data_word_from_index(remaining, i),
                             "end_of_packet": end_of_packet_from_index(remaining, i)[0],
-                            "end_of_packet_len": end_of_packet_from_index(remaining, i)[1],
+                            "end_of_packet_len": end_of_packet_from_index(remaining, i)[
+                                1
+                            ],
                             "next_proto": next_proto,
                         }
                     )
                 if not remaining:
                     self.outputq.append(
-                        {"data": 0, "end_of_packet": True, "end_of_packet_len": 0, "next_proto": next_proto}
+                        {
+                            "data": 0,
+                            "end_of_packet": True,
+                            "end_of_packet_len": 0,
+                            "next_proto": next_proto,
+                        }
                     )
 
     async def din_process(self, sim):
@@ -106,7 +136,9 @@ class TestAligner(TestCaseWithSimulator):
 
             print("i", self.inputq[0])
             print(f"IN{self.inputq[0]['data']:x}")
-            print(f"IF{self.inputq[0]['data']>>(self.inputq[0]['octets_consumed']*8):x}")
+            print(
+                f"IF{self.inputq[0]['data']>>(self.inputq[0]['octets_consumed']*8):x}"
+            )
 
             if self.inputq[0]["end_of_packet"]:
                 print("===========")

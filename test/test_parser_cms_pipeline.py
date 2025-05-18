@@ -23,7 +23,7 @@ from transactron.testing.testbenchio import CallTrigger
 from mur.final_build.ParserCMSVol import ParserCMSVol  # adjust if module path differs
 
 # -----------------------------------------------------------------------
-#  Helpers (unchanged from the original version)                           
+#  Helpers (unchanged from the original version)
 # -----------------------------------------------------------------------
 CYCLE_TIME = 0.0001  # 2 µs per cycle – matches ParserCMSVol configuration
 
@@ -35,7 +35,10 @@ def bytes_to_int_le(b: bytes) -> int:
 
 def split_chunks(buf: bytes, size: int = 64):
     """Split *buf* into *size*-byte chunks (pad last chunk with zeros)."""
-    return [buf[i : i + size].ljust(size, b"\0") for i in range(0, len(buf), size)] or [b"".ljust(size, b"\0")]
+    return [buf[i : i + size].ljust(size, b"\0") for i in range(0, len(buf), size)] or [
+        b"".ljust(size, b"\0")
+    ]
+
 
 def compare_pcap_files(file1: str, file2: str) -> bool:
     """Compare two pcap files and return True if they are identical."""
@@ -51,8 +54,9 @@ def compare_pcap_files(file1: str, file2: str) -> bool:
 
     return True
 
+
 # -----------------------------------------------------------------------
-#  Test‑bench                                                             
+#  Test‑bench
 # -----------------------------------------------------------------------
 class TestParserCMSVol(TestCaseWithSimulator):
     """Randomised functional TB for **ParserCMSVol** with direct packet output."""
@@ -91,8 +95,8 @@ class TestParserCMSVol(TestCaseWithSimulator):
                 )
 
         # Shared indices & state flags --------------------------------
-        self._in_idx: int = 0           # next word to feed into *din*
-        self._driver_done: bool = False # set True once driver finishes
+        self._in_idx: int = 0  # next word to feed into *din*
+        self._driver_done: bool = False  # set True once driver finishes
         self.filtered_packets: list[bytes] = []  # packets reconstructed from *dout*
 
     # ------------------------------------------------------------------
@@ -133,12 +137,14 @@ class TestParserCMSVol(TestCaseWithSimulator):
         # Continue until the driver is done *and* dout stays idle for a while
         while not (self._driver_done and idle_cycles > 200):
             resp = await self.dut.dout.call_try(sim)
-            assert not((resp is None) and in_middle_of_packet), "Unexpected idle cycle in the middle of a packet."
+            assert not (
+                (resp is None) and in_middle_of_packet
+            ), "Unexpected idle cycle in the middle of a packet."
             if resp is None:
                 idle_cycles += 1
                 await sim.tick()
                 continue
-            
+
             in_middle_of_packet = True
 
             idle_cycles = 0  # reset on every successful read
@@ -160,7 +166,11 @@ class TestParserCMSVol(TestCaseWithSimulator):
         wrpcap("example_pcaps/filtered_output_pipeline.pcap", self.filtered_packets)
         print(f"Filtered pcap written with {len(self.filtered_packets)} packets.")
         # Compare with the original pcap (if available) ---------------
-        assert compare_pcap_files("example_pcaps/filtered_output_pipeline.pcap", "example_pcaps/flows_answer.pcap"), "Filtered pcap does not match original."
+        assert compare_pcap_files(
+            "example_pcaps/filtered_output_pipeline.pcap",
+            "example_pcaps/flows_answer.pcap",
+        ), "Filtered pcap does not match original."
+
     # ------------------------------------------------------------------
     #  Top‑level test (entry‑point)
     # ------------------------------------------------------------------

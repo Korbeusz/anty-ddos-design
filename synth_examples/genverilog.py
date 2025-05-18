@@ -7,7 +7,9 @@ from transactron.utils.gen import generate_verilog
 
 def gen_verilog(component: Component, output_path: str):
     with DependencyContext(DependencyManager()):
-        top = TransactionComponent(component, dependency_manager=DependencyContext.get())
+        top = TransactionComponent(
+            component, dependency_manager=DependencyContext.get()
+        )
 
         verilog_text, gen_info = generate_verilog(top)
 

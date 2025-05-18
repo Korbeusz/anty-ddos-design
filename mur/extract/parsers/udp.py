@@ -4,15 +4,16 @@ from transactron.utils.transactron_helpers import make_layout
 from mur.utils import select_field_be
 from mur.extract.interfaces import ProtoParserLayouts
 
+
 class UDPParser(Elaboratable):
     class ResultLayouts:
         def __init__(self):
             # Define the layout of the UDP header fields
             self.fields = make_layout(
-                ("source_port", 16),      # Bits 0-15
-                ("destination_port", 16), # Bits 16-31
-                ("length", 16),           # Bits 32-47
-                ("checksum", 16),         # Bits 48-63
+                ("source_port", 16),  # Bits 0-15
+                ("destination_port", 16),  # Bits 16-31
+                ("length", 16),  # Bits 32-47
+                ("checksum", 16),  # Bits 48-63
             )
 
     def __init__(self, push_parsed: Method):
@@ -32,10 +33,10 @@ class UDPParser(Elaboratable):
 
             # Extract UDP header fields
             m.d.av_comb += [
-                select_field_be(m, parsed.source_port, data, 0),      # 16 bits
-                select_field_be(m, parsed.destination_port, data, 16),# 16 bits
-                select_field_be(m, parsed.length, data, 32),          # 16 bits
-                select_field_be(m, parsed.checksum, data, 48),        # 16 bits
+                select_field_be(m, parsed.source_port, data, 0),  # 16 bits
+                select_field_be(m, parsed.destination_port, data, 16),  # 16 bits
+                select_field_be(m, parsed.length, data, 32),  # 16 bits
+                select_field_be(m, parsed.checksum, data, 48),  # 16 bits
             ]
 
             # Check for runt packet (less than 8 bytes)
