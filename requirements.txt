@@ -1,4 +1,4 @@
-transactron @ git+https://github.com/kuznia-rdzeni/transactron.git@414def461c58ec58b90813fface2a959146e1f82
+transactron @ git+https://github.com/kuznia-rdzeni/transactron.git@6acb8036b346b618a1e7b41ab7d6f75e7491bdd6
 
 amaranth==0.5.3
 pyright==1.1.322
