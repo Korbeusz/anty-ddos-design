@@ -10,14 +10,23 @@ count‑/volume‑statistics pipeline.
   consumes the fully reconstructed packet stream available on **dout** and
   writes it verbatim to *filtered_output_pipeline.pcap*.
 
-Simulation input:  *example_pcaps/flows.pcap*
+Packets are generated internally (mirroring ``generate_pcap.py``) instead of
+loading ``example_pcaps/flows.pcap`` from disk.
+
 Simulation output: *filtered_output_pipeline.pcap* (written after the run)
 """
 
 from random import seed, random
-from scapy.all import rdpcap, wrpcap  # type: ignore
+from scapy.all import (
+    wrpcap,
+    Ether,
+    IP,
+    UDP,
+    TCP,
+    Raw,
+)  # type: ignore
+import itertools
 from transactron.testing import TestCaseWithSimulator, SimpleTestCircuit
-from transactron.testing.testbenchio import CallTrigger
 
 # DUT -------------------------------------------------------------------
 from mur.final_build.ParserCMSVol import ParserCMSVol  # adjust if module path differs
@@ -40,11 +49,8 @@ def split_chunks(buf: bytes, size: int = 64):
     ]
 
 
-def compare_pcap_files(file1: str, file2: str) -> bool:
-    """Compare two pcap files and return True if they are identical."""
-    pkts1 = rdpcap(file1)
-    pkts2 = rdpcap(file2)
-
+def compare_pkt_lists(pkts1, pkts2) -> bool:
+    """Return ``True`` if two packet lists contain identical byte sequences."""
     if len(pkts1) != len(pkts2):
         return False
 
@@ -53,6 +59,80 @@ def compare_pcap_files(file1: str, file2: str) -> bool:
             return False
 
     return True
+
+
+def generate_packets(include_ddos: bool = True):
+    """Generate packets exactly like ``generate_pcap.py``."""
+
+    SERVER_IP = "192.168.1.100"
+    SERVER_MAC = "02:42:c0:a8:01:64"
+
+    CLIENT_IPS = [
+        "192.168.1.101",
+        "192.168.1.102",
+        "192.168.1.103",
+        "192.168.1.104",
+        "192.168.1.105",
+    ]
+    CLIENT_MACS = [
+        "02:42:c0:a8:01:65",
+        "02:42:c0:a8:01:66",
+        "02:42:c0:a8:01:67",
+        "02:42:c0:a8:01:68",
+        "02:42:c0:a8:01:69",
+    ]
+
+    FLOWS = [
+        dict(proto="TCP", dport=5001, sport=40001, size=120, rate=80000),
+        dict(proto="TCP", dport=5002, sport=40002, size=120, rate=20000),
+        dict(proto="UDP", dport=6001, sport=40003, size=512, rate=120000),
+        dict(proto="UDP", dport=6002, sport=40004, size=512, rate=10000),
+        dict(proto="UDP", dport=6003, sport=40005, size=256, rate=200000),
+    ]
+
+    DDOS_SECONDS = {1, 2}
+    DDOS_RATE = 500000
+    DDOS_SIZE = 1_024
+    DDOS_SPORT = 53
+    DDOS_DPORT = 40006
+    DDOS_SRC_IPS = [f"198.51.100.{i}" for i in range(1, 251)]
+    DDOS_SRC_MAC = "de:ad:be:ef:00:%02x"
+
+    DURATION = 3
+
+    pkts = []
+    t0 = 0.0
+
+    for sec in range(DURATION):
+        for i, f in enumerate(FLOWS):
+            pps = f["rate"] // 8 // f["size"]
+            for n in range(int(pps)):
+                eth = Ether(src=CLIENT_MACS[i], dst=SERVER_MAC)
+                ip = IP(src=CLIENT_IPS[i], dst=SERVER_IP)
+                l4 = (
+                    TCP(sport=f["sport"], dport=f["dport"], flags="S")
+                    if f["proto"] == "TCP"
+                    else UDP(sport=f["sport"], dport=f["dport"])
+                )
+                pkt = eth / ip / l4 / Raw(b"x" * f["size"])
+                pkt.time = t0 + sec + n / pps
+                pkts.append(pkt)
+
+        if include_ddos and sec in DDOS_SECONDS:
+            pps_ddos = DDOS_RATE // 8 // DDOS_SIZE
+            src_cycle = itertools.cycle(DDOS_SRC_IPS)
+            for n in range(int(pps_ddos)):
+                src_ip = next(src_cycle)
+                src_mac = DDOS_SRC_MAC % (n % 256)
+                eth = Ether(src=src_mac, dst=SERVER_MAC)
+                ip = IP(src=src_ip, dst=SERVER_IP)
+                l4 = UDP(sport=DDOS_SPORT, dport=DDOS_DPORT)
+                pkt = eth / ip / l4 / Raw(b"X" * DDOS_SIZE)
+                pkt.time = t0 + sec + n / pps_ddos
+                pkts.append(pkt)
+
+    pkts.sort(key=lambda p: p.time)
+    return pkts
 
 
 # -----------------------------------------------------------------------
@@ -67,9 +147,10 @@ class TestParserCMSVol(TestCaseWithSimulator):
     def setup_method(self):
         seed(42)
 
-        pkts = rdpcap("example_pcaps/flows.pcap")
+        pkts = generate_packets(include_ddos=True)
         if not pkts:
-            raise RuntimeError("Input pcap is empty or missing.")
+            raise RuntimeError("No packets generated.")
+        self.expected_packets = generate_packets(include_ddos=False)
 
         self.inputs: list[dict] = []  # queued words for *din*
 
@@ -165,11 +246,10 @@ class TestParserCMSVol(TestCaseWithSimulator):
         # After loop, write resulting capture -------------------------
         wrpcap("example_pcaps/filtered_output_pipeline.pcap", self.filtered_packets)
         print(f"Filtered pcap written with {len(self.filtered_packets)} packets.")
-        # Compare with the original pcap (if available) ---------------
-        assert compare_pcap_files(
-            "example_pcaps/filtered_output_pipeline.pcap",
-            "example_pcaps/flows_answer.pcap",
-        ), "Filtered pcap does not match original."
+        # Compare with packets generated without the DDoS traffic ------
+        assert compare_pkt_lists(
+            self.filtered_packets, self.expected_packets
+        ), "Filtered packets do not match expected output."
 
     # ------------------------------------------------------------------
     #  Top‑level test (entry‑point)
