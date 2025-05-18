@@ -1,16 +1,3 @@
-from __future__ import annotations
-
-"""test_parser_cms_pipeline.py
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Functional test‑bench for **ParserCMSVol** – a unified packet‑parsing and
-count‑/volume‑statistics pipeline.
-
-* Stimulus packets are generated on the fly using the same logic as
-  ``generate_pcap.py``.  This avoids any dependency on external PCAP files.
-* Instead of interpreting the numerical ``out`` decisions, the TB consumes the
-  fully reconstructed packet stream available on **dout**.
-"""
-
 from random import seed, random
 import itertools
 from scapy.all import Ether, IP, UDP, TCP, Raw  # type: ignore
@@ -235,9 +222,9 @@ class TestParserCMSVol(TestCaseWithSimulator):
                 cur_pkt.extend(data_bytes)
 
         # After loop, compare with the expected packets ---------------
-        assert packets_equal(self.filtered_packets, self.expected_packets), (
-            "Filtered packets do not match expected output."
-        )
+        assert packets_equal(
+            self.filtered_packets, self.expected_packets
+        ), "Filtered packets do not match expected output."
 
     # ------------------------------------------------------------------
     #  Top‑level test (entry‑point)
