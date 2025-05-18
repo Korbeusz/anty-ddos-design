@@ -15,6 +15,17 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+      - name: Apply black formatting
+        run: |
+          black --extend-exclude "stubs|external|coreblocks|transactron|amaranth-stubs" .
+      - name: Commit formatted code
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            git config --global user.email "github-actions[bot]@users.noreply.github.com"
+            git config --global user.name "github-actions[bot]"
+            git commit -am "Apply black formatting"
+            git push
+          fi
       - name: Check formatting with black
         run: |
           black --extend-exclude "stubs|external|coreblocks|transactron|amaranth-stubs" --check .
