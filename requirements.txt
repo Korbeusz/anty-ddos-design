@@ -1,6 +1,6 @@
 transactron @ git+https://github.com/kuznia-rdzeni/transactron.git@414def461c58ec58b90813fface2a959146e1f82
 
-amaranth==0.5.4
+amaranth==0.5.3
 pyright==1.1.322
 flake8==7.0.0
 black==24.4.2
