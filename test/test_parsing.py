@@ -8,7 +8,7 @@ from transactron.core import *
 from transactron.lib.connectors import ConnectTrans
 from transactron.lib.fifo import BasicFifo
 from mur.extract.interfaces import ProtoParserLayouts
-from scapy.all import rdpcap
+from scapy.all import Ether, IP, TCP, UDP, Raw
 from random import randint, random, seed
 from transactron.lib import logging
 from transactron.lib.simultaneous import condition
@@ -334,15 +334,31 @@ def parse_tcp(pkt: bytes, l4_off: int):
 
 class TestEthernetIPv4TCPUDPParser(TestCaseWithSimulator):
     def setup_method(self):
+        """Generate random TCP and UDP packets for the parser chain."""
         seed(42)
-        pkts = rdpcap("example_pcaps/flows.pcap")
-        print("Reading done")
+
+        def rand_ip():
+            return f"192.168.{randint(0,255)}.{randint(1,254)}"
+
+        num_pkts = 20
+        pkts = []
+        for i in range(num_pkts):
+            eth = Ether(src="02:00:00:00:00:01", dst="02:00:00:00:00:02")
+            ip = IP(src=rand_ip(), dst=rand_ip())
+            if random() < 0.5:
+                l4 = UDP(sport=randint(1024, 65535), dport=randint(1024, 65535))
+            else:
+                l4 = TCP(sport=randint(1024, 65535), dport=randint(1024, 65535))
+            payload = bytes(randint(0, 255) for _ in range(randint(0, 60)))
+            pkt = eth / ip / l4 / Raw(payload)
+            pkt.time = i * 0.001
+            pkts.append(pkt)
 
         self.inputs = []
         self.exp_eth = []
         self.exp_ip = []
-        self.exp_udp = []  # Expected UDP headers in arrival order
-        self.exp_tcp = []  # Expected TCP headers in arrival order
+        self.exp_udp = []
+        self.exp_tcp = []
         base_sc = pkts[0].time
         for sc in pkts:
             raw = bytes(sc)
@@ -353,7 +369,6 @@ class TestEthernetIPv4TCPUDPParser(TestCaseWithSimulator):
                 else {"error_drop": 1}
             )
 
-            # --- push raw words into FIFO -----------------------
             pkt_ts = sc.time - base_sc
             in_chunks = split_chunks(raw, 64)
             for i, ch in enumerate(in_chunks):
@@ -369,15 +384,14 @@ class TestEthernetIPv4TCPUDPParser(TestCaseWithSimulator):
                     }
                 )
 
-            # Expected headers -----------------------------------
             self.exp_eth.append(eth)
             self.exp_ip.append(ip)
 
             if ip.get("error_drop", 1) == 0:
                 l4_off = eth["header_len"] + ip["header_len"]
-                if ip["protocol"] == 17:  # UDP
+                if ip["protocol"] == 17:
                     self.exp_udp.append(parse_udp(raw, l4_off))
-                elif ip["protocol"] == 6:  # TCP
+                elif ip["protocol"] == 6:
                     self.exp_tcp.append(parse_tcp(raw, l4_off))
 
     # ------------ driver / checker processes ---------------------
