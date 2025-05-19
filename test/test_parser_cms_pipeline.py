@@ -10,7 +10,8 @@ from mur.final_build.ParserCMSVol import ParserCMSVol  # adjust if module path d
 # -----------------------------------------------------------------------
 #  Helpers (unchanged from the original version)
 # -----------------------------------------------------------------------
-CYCLE_TIME = 0.0001  # 2 µs per cycle – matches ParserCMSVol configuration
+CYCLE_TIME = 0.001  # 1 ms per cycle – matches ParserCMSVol configuration
+RATE_SCALE = 20  # reduce traffic for faster tests
 
 
 def bytes_to_int_le(b: bytes) -> int:
@@ -80,7 +81,7 @@ def generate_packets(ddos_seconds: set[int]) -> list:
     for sec in range(DURATION):
         # baseline traffic ----------------------------------------------
         for i, f in enumerate(FLOWS):
-            pps = f["rate"] // 8 // f["size"]
+            pps = (f["rate"] // RATE_SCALE) // 8 // f["size"]
             for n in range(int(pps)):
                 eth = Ether(src=CLIENT_MACS[i], dst=SERVER_MAC)
                 ip = IP(src=CLIENT_IPS[i], dst=SERVER_IP)
@@ -92,10 +93,9 @@ def generate_packets(ddos_seconds: set[int]) -> list:
                 pkt = eth / ip / l4 / Raw(b"x" * f["size"])
                 pkt.time = t0 + sec + n / pps
                 pkts.append(pkt)
-
         # DNS-amplification traffic ------------------------------------
         if sec in ddos_seconds:
-            pps_ddos = DDOS_RATE // 8 // DDOS_SIZE
+            pps_ddos = (DDOS_RATE // RATE_SCALE) // 8 // DDOS_SIZE
             src_cycle = itertools.cycle(DDOS_SRC_IPS)
             for n in range(int(pps_ddos)):
                 src_ip = next(src_cycle)
@@ -129,6 +129,8 @@ class TestParserCMSVol(TestCaseWithSimulator):
 
         # Expected output after filtering ------------------------------
         self.expected_packets = generate_packets({1})
+        # sanity check -- some packets should be removed by the filter
+        assert not packets_equal(pkts, self.expected_packets)
 
         self.inputs: list[dict] = []  # queued words for *din*
 
@@ -235,7 +237,7 @@ class TestParserCMSVol(TestCaseWithSimulator):
             width=16_384,
             counter_width=32,
             window=int(1 / CYCLE_TIME),
-            volume_threshold=100_000,
+            volume_threshold=5_000,
             cms_fifo_depth=16,
         )
         self.dut = SimpleTestCircuit(core)
