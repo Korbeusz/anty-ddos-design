@@ -1,13 +1,10 @@
 from amaranth import *
 
 from transactron import *
-from transactron.lib import logging
 from transactron.lib.connectors import ConnectTrans, Forwarder
 
 from mur.params import Params
 from .interfaces import ProtoParserLayouts
-
-log = logging.HardwareLogger("extract.aligner")
 
 
 class ParserAligner(Elaboratable):
@@ -72,7 +69,6 @@ class ParserAligner(Elaboratable):
             m.d.sync += output_end_of_packet_flag.eq(0)
             m.d.sync += output_end_of_packet.eq(0)
 
-            # log.debug(m, True, "aligned_output {} {:x} {:x}", output_v, output, buffer)
 
             end_of_packet_len = Mux(output_v, output_end_of_packet, buffer_end_pending)
             end_of_packet_flag = Mux(
@@ -151,8 +147,5 @@ class ParserAligner(Elaboratable):
             with m.Else():
                 m.d.sync += buffer_consumed.eq(octet_count)
 
-            # log.debug(
-            #    m, True, "din run \nout {:x} \nbuffer {:x} \nin {:x} c {:x}", output, buffer, data, octets_consumed
-            # )
 
         return m

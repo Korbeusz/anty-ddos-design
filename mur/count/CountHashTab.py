@@ -2,10 +2,7 @@
 from amaranth import *
 from transactron import *
 from amaranth.lib.memory import Memory as memory
-from transactron.lib import logging
 from mur.count.hash import Hash
-
-log = logging.HardwareLogger("count.counthashtab")
 __all__ = ["CountHashTab"]
 
 
@@ -124,13 +121,6 @@ class CountHashTab(Elaboratable):
             m.d.sync += insert_memory_write_address2.eq(insert_memory_write_address)
 
         with m.If(insert_memory_write):
-            log.debug(
-                m,
-                True,
-                "insert_memory_write {:x} v: {:x}",
-                insert_memory_write_address2,
-                insert_incremented_value,
-            )
             m.d.comb += [
                 wr.en.eq(1),
                 wr.addr.eq(insert_memory_write_address2),
@@ -153,7 +143,6 @@ class CountHashTab(Elaboratable):
 
         @def_method(m, self.insert)
         def _(data):
-            log.debug(m, True, "INSERT")
             self.insert_hash.input(m, data)
 
         @def_method(m, self.query_resp)
@@ -162,12 +151,10 @@ class CountHashTab(Elaboratable):
 
         @def_method(m, self.query_req)
         def _(data):
-            log.debug(m, True, "QUERY")
             self.query_hash.input(m, data)
 
         @def_method(m, self.clear)
         def _():
-            log.debug(m, True, "CLEAR")
             m.d.sync += clr_addr.eq(0)
             m.d.sync += clr_waiting.eq(10)
 

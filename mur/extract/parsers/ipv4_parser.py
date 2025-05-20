@@ -1,7 +1,6 @@
 from amaranth import *
 
 from transactron.core import *
-from transactron.lib import logging
 from transactron.utils.transactron_helpers import make_layout
 
 from mur.params import Params
@@ -10,7 +9,6 @@ from mur.extract.interfaces import ProtoParserLayouts
 
 from enum import IntFlag, auto
 
-log = logging.HardwareLogger("parser.ipv4")
 
 
 class IPv4Parser(Elaboratable):
