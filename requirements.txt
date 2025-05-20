@@ -9,5 +9,5 @@ pytest-xdist==3.5.0
 parameterized==0.8.1
 pre-commit==2.16.0
 scapy == 2.6.1
-# missing transactron.testing deps
+amaranth-yosys==0.40.0.0.post100
 hypothesis==6.99.6
