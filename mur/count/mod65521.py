@@ -1,9 +1,5 @@
 from amaranth import *
 from transactron import Method, def_method, TModule
-
-from transactron.lib import logging
-
-log = logging.HardwareLogger("count.mod65521")
 __all__ = ["Mod65521"]
 
 

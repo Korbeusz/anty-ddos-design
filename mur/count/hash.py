@@ -1,9 +1,7 @@
 from amaranth import *
 from transactron import Method, def_method, TModule, Transaction
-from transactron.lib import logging
 from mur.count.mod65521 import Mod65521
 
-log = logging.HardwareLogger("count.hash")
 
 
 __all__ = ["Hash"]
@@ -42,16 +40,13 @@ class Hash(Elaboratable):
                     mul_result.eq(self._a * mod0_res["mod"] + self._b),
                     mul_valid.eq(1),
                 ]
-                # log.debug(m, True, "mul_result", mul_result)
 
         with Transaction().body(m, request=mul_valid):
             mod_out.input(m, data=mul_result)
-            # log.debug(m, True, "mod_out.input {:x}", mul_result)
 
         @def_method(m, self.result)
         def _():
             res = mod_out.result(m)
-            # log.debug(m, res["valid"], "mod_out.result {:x}", res["mod"])
             return {"hash": res["mod"], "valid": res["valid"]}
 
         return m

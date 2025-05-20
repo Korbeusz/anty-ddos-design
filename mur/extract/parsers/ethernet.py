@@ -1,7 +1,6 @@
 from amaranth import *
 
 from transactron.core import *
-from transactron.lib import logging
 from transactron.utils.transactron_helpers import make_layout
 
 from mur.params import Params
@@ -10,7 +9,6 @@ from mur.extract.interfaces import ProtoParserLayouts
 
 from enum import IntFlag, auto
 
-log = logging.HardwareLogger("parser.ethernet")
 
 
 class EthernetParser(Elaboratable):
@@ -97,7 +95,6 @@ class EthernetParser(Elaboratable):
             # error_drop -> bypass path, qo shouldn't be considered
             # now are there any recoverable errors that we want to report? not for now? what to do with them
             # two kinds of recoverable erros -> one keep offset to next header known and other not. Should be handled differently
-            log.debug(m, True, "EthernetParser step done")
             return {
                 "data": data,
                 "octets_consumed": packet_length,

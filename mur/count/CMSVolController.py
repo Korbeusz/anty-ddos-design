@@ -6,9 +6,7 @@ from transactron.lib.fifo import BasicFifo
 from transactron.lib.simultaneous import condition
 from mur.count.RollingCountMinSketch import RollingCountMinSketch
 from mur.count.VolCounter import VolCounter
-from transactron.lib import logging
 
-log = logging.HardwareLogger("test.cmsvolcontroller")
 __all__ = ["CMSVolController"]
 
 
@@ -136,13 +134,6 @@ class CMSVolController(Elaboratable):
             with m.Else():
                 m.d.sync += self._query_requested.eq(self._query_requested + 1)
             self.vcnt.add_sample(m, data=s["data"])
-            log.debug(
-                m,
-                True,
-                "Input happens current_mode {:d} _insert_requested {:d}",
-                self._current_mode,
-                self._insert_requested,
-            )
 
         with Transaction().body(m):
             res = self.vcnt.result(m)
@@ -153,7 +144,7 @@ class CMSVolController(Elaboratable):
                 self.rcms_sipdip.change_roles(m)
                 self.rcms_dportdip.change_roles(m)
                 self.rcms_siplen.change_roles(m)
-            log.debug(m, True, "RCMS mode {:d} → {:d}", self._current_mode, res["mode"])
+
 
         self._inserts_difference = Signal(32)
         m.d.comb += self._inserts_difference.eq(
@@ -171,16 +162,6 @@ class CMSVolController(Elaboratable):
             q1 = self.rcms_sipdip.output(m)
             q2 = self.rcms_dportdip.output(m)
             q3 = self.rcms_siplen.output(m)
-            log.debug(
-                m,
-                True,
-                " _inserts_difference {:d}, _all_query_received {:d}",
-                self._inserts_difference,
-                self._all_query_received,
-            )
-            log.debug(
-                m, True, "cms_sum:{:d}+{:d}+{:d}", q1["count"], q2["count"], q3["count"]
-            )
             with m.If(self._all_query_received & self._inserts_difference):
                 m.d.sync += self._out.eq(self._inserts_difference)
                 m.d.sync += self._insert_received.eq(self._insert_requested)

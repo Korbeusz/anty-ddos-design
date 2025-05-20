@@ -4,7 +4,6 @@ from transactron import *
 from transactron.core import Transaction
 from transactron.lib.fifo import BasicFifo
 from transactron.lib.simultaneous import condition
-from transactron.lib import logging
 
 from mur.params import Params
 from mur.extract.interfaces import ProtoParserLayouts
@@ -18,7 +17,6 @@ from mur.count.CMSVolController import CMSVolController
 
 __all__ = ["ParserCMSVol"]
 
-log = logging.HardwareLogger("top.parser_cms_pipeline")
 
 
 class ParserCMSVol(Elaboratable):

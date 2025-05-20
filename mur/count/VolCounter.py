@@ -1,9 +1,6 @@
-from transactron.lib import logging
 from amaranth import *
 from amaranth.utils import ceil_log2
 from transactron import Method, def_method, TModule
-
-log = logging.HardwareLogger("count.VolCounter")
 __all__ = ["VolCounter"]
 
 
@@ -72,7 +69,6 @@ class VolCounter(Elaboratable):
         @def_method(m, self.result, ready=(counter == self.window - 1))
         def _result():
             m.d.comb += mode.eq(Mux(acc > self.threshold, 1, 0))
-            log.debug(m, True, "acc {:d} th: {:d} ", acc, self.threshold)
             return {"mode": mode}
 
         return m

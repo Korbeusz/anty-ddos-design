@@ -10,10 +10,7 @@ from transactron.lib.fifo import BasicFifo
 from mur.extract.interfaces import ProtoParserLayouts
 from scapy.all import Ether, IP, TCP, UDP, Raw
 from random import randint, random, seed
-from transactron.lib import logging
 from transactron.lib.simultaneous import condition
-
-log = logging.HardwareLogger("test.construction")
 CYCLE_TIME = 0.0005
 
 
@@ -149,7 +146,6 @@ class parser_aligner(Elaboratable):
             word0 = self.fifo_in.read(m)
             eth_out = self.eth_parser.step(m, word0)
             self.aligner1.din(m, eth_out)
-            log.debug(m, True, "Transaction 1")
 
         # 2. IPv4 parser -----------------------------------------------
         with Transaction().body(m):
@@ -161,7 +157,6 @@ class parser_aligner(Elaboratable):
             }
             ip_out = self.ip_parser.step(m, ip_in)
             self.aligner2.din(m, ip_out)
-            log.debug(m, True, "Transaction 2")
 
         # 3. UDP / TCP selection ---------------------------------------
         with Transaction().body(m):
@@ -177,7 +172,6 @@ class parser_aligner(Elaboratable):
                     self.udp_parser.step(m, tr_in)
                 with branch(al2["next_proto"] == IpProtoOut.TCP):
                     self.tcp_parser.step(m, tr_in)
-            log.debug(m, True, "Transaction 3")
 
         return m
 
