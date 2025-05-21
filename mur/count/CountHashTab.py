@@ -3,6 +3,7 @@ from amaranth import *
 from transactron import *
 from amaranth.lib.memory import Memory as memory
 from mur.count.hash import Hash
+
 __all__ = ["CountHashTab"]
 
 
@@ -63,82 +64,83 @@ class CountHashTab(Elaboratable):
         wr = self._mem.write_port(domain="sync")
         rd = self._mem.read_port(domain="sync", transparent_for=(wr,))
 
+        req_start = Signal()
         req_save = Signal()
         req_ready = Signal()
         req_read_value = Signal(self.counter_width)
-        req_addr2 = Signal(range(self.size))
 
+        inc_start = Signal()
         insert_incrementing = Signal()
-        insert_memory_write = Signal()
-        insert_memory_write_address = Signal(range(self.size))
-        insert_memory_write_address2 = Signal(range(self.size))
-        insert_incremented_value = Signal(self.counter_width)
+        insert_writing = Signal()
 
         clr_running = Signal()
         clr_addr = Signal(range(self.size))
         clr_waiting = Signal(range(16))
-        m.d.comb += [
+
+        m.d.sync += [
             wr.en.eq(0),
             rd.en.eq(0),
         ]
         m.d.sync += [
-            req_save.eq(0),
+            req_start.eq(0),
+            req_save.eq(req_start),
             req_ready.eq(req_save),
-            insert_incrementing.eq(0),
-            insert_memory_write.eq(insert_incrementing),
+            inc_start.eq(0),
+            insert_incrementing.eq(inc_start),
+            insert_writing.eq(insert_incrementing),
         ]
 
         with Transaction().body(m):
             res = self.query_hash.result(m)
             with m.If(res["valid"]):
-                m.d.comb += [rd.en.eq(1), rd.addr.eq(res["hash"])]
-                m.d.sync += req_addr2.eq(res["hash"])
-                m.d.sync += req_save.eq(1)
+                m.d.sync += [rd.en.eq(1), rd.addr.eq(res["hash"]), req_start.eq(1)]
+
+        increment_addr = Signal(range(self.size))
+        with m.If(req_start):
+            m.d.sync += increment_addr.eq(rd.addr)
 
         with m.If(req_save):
-            with m.If(
-                insert_memory_write & (insert_memory_write_address2 == req_addr2)
-            ):
-                m.d.sync += req_read_value.eq(insert_incremented_value)
+            with m.If(insert_writing & (wr.addr == increment_addr)):
+                m.d.sync += req_read_value.eq(wr.data)
             with m.Else():
                 m.d.sync += req_read_value.eq(rd.data)
 
         with Transaction().body(m):
             res = self.insert_hash.result(m)
             with m.If(res["valid"]):
-                m.d.comb += [rd.en.eq(1), rd.addr.eq(res["hash"])]
-                m.d.sync += insert_memory_write_address.eq(res["hash"])
-                m.d.sync += insert_incrementing.eq(1)
-
+                m.d.sync += [
+                    rd.en.eq(1),
+                    rd.addr.eq(res["hash"]),
+                    inc_start.eq(1),
+                ]
+        write_addr = Signal(range(self.size))
+        with m.If(inc_start):
+            m.d.sync += write_addr.eq(rd.addr)
         with m.If(insert_incrementing):
-            with m.If(
-                insert_memory_write
-                & (insert_memory_write_address2 == insert_memory_write_address)
-            ):
-                m.d.sync += insert_incremented_value.eq(insert_incremented_value + 1)
+            with m.If(insert_writing & (wr.addr == write_addr)):
+                m.d.sync += [
+                    wr.en.eq(1),
+                    wr.addr.eq(write_addr),
+                    wr.data.eq(wr.data + 1),
+                ]
             with m.Else():
-                m.d.sync += insert_incremented_value.eq(rd.data + 1)
-            m.d.sync += insert_memory_write_address2.eq(insert_memory_write_address)
-
-        with m.If(insert_memory_write):
-            m.d.comb += [
-                wr.en.eq(1),
-                wr.addr.eq(insert_memory_write_address2),
-                wr.data.eq(insert_incremented_value),
-            ]
+                m.d.sync += wr.data.eq(rd.data + 1)
+                m.d.sync += [wr.en.eq(1), wr.addr.eq(write_addr)]
 
         with m.If(clr_waiting > 0):
             m.d.sync += clr_waiting.eq(clr_waiting - 1)
             with m.If(clr_waiting == 1):
                 m.d.sync += clr_running.eq(1)
+                m.d.sync += [
+                    wr.en.eq(1),
+                    wr.addr.eq(0),
+                    wr.data.eq(0),
+                ]
         with m.If(clr_running):
-            m.d.comb += [
-                wr.en.eq(1),
-                wr.addr.eq(clr_addr),
-                wr.data.eq(0),
-            ]
-            m.d.sync += clr_addr.eq(clr_addr + 1)
-            with m.If(clr_addr == self.size - 1):
+            m.d.sync += wr.addr.eq(wr.addr + 1)
+            m.d.sync += wr.data.eq(0)
+            m.d.sync += wr.en.eq(1)
+            with m.If(wr.addr == self.size - 2):
                 m.d.sync += clr_running.eq(0)
 
         @def_method(m, self.insert)
