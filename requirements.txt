@@ -10,4 +10,5 @@ parameterized==0.8.1
 pre-commit==2.16.0
 scapy == 2.6.1
 amaranth-yosys==0.40.0.0.post100
+dataclasses-json==0.6.3
 hypothesis==6.99.6

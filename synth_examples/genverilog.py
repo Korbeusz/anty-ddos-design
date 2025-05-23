@@ -11,7 +11,7 @@ def gen_verilog(component: Component, output_path: str):
             component, dependency_manager=DependencyContext.get()
         )
 
-        verilog_text, gen_info = generate_verilog(top)
+        verilog_text, gen_info = generate_verilog(top, top_name="antyddos")
 
         gen_info.encode(f"{output_path}.json")
         with open(output_path, "w") as f:

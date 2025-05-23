@@ -2,12 +2,13 @@ from amaranth import Cat, Mux, Signal
 from amaranth.lib.wiring import Component, In, Out
 from transactron.core import TModule, Transaction
 
+
 from mur.final_build.ParserCMSVol import ParserCMSVol
 from mur.params import Params
 from mur.utils import swap_endianess
 from synth_examples.genverilog import gen_verilog
 
-CYCLE_TIME = 0.0001
+CYCLE_TIME = 0.000000001
 
 
 class ParserCMSVolModule(Component):
@@ -25,8 +26,6 @@ class ParserCMSVolModule(Component):
     def __init__(self):
         super().__init__(
             {
-                "clk": In(1),
-                "rst_n": In(1),
                 "in_data": In(520),
                 "in_valid": In(1),
                 "in_empty": In(1),

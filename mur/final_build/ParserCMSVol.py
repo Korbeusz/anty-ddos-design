@@ -18,7 +18,6 @@ from mur.count.CMSVolController import CMSVolController
 __all__ = ["ParserCMSVol"]
 
 
-
 class ParserCMSVol(Elaboratable):
     """
     ParserCMSVol megres fucnctionallity of Parser and CMSVolController.
@@ -93,7 +92,6 @@ class ParserCMSVol(Elaboratable):
             discard_threshold=discard_threshold,
             fifo_depth=cms_fifo_depth,
         )
-        self.out = self._cms.out
 
     def _push_dummy(self):
         lay = [
@@ -196,12 +194,7 @@ class ParserCMSVol(Elaboratable):
                 "end_of_packet": al2["end_of_packet"],
                 "end_of_packet_len": al2["end_of_packet_len"],
             }
-            IpProtoOut = IPv4Parser.ProtoOut
-            with condition(m) as branch:
-                with branch(al2["next_proto"] == IpProtoOut.UDP):
-                    self._udp_parser.step(m, tr_in)
-                with branch(al2["next_proto"] == IpProtoOut.TCP):
-                    self._tcp_parser.step(m, tr_in)
+            self._udp_parser.step(m, tr_in)
 
         # FILTERING
         decision = Signal(32, init=0)
