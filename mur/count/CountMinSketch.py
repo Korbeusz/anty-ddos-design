@@ -67,24 +67,6 @@ class CountMinSketch(Elaboratable):
             setattr(self, f"_row{idx}", row)
             self.rows.append(row)
 
-    @staticmethod
-    def _tree_min(values: list[Value]) -> Value:
-        if not values:
-            raise ValueError("values must be non‑empty")
-
-        layer = values
-        while len(layer) > 1:
-            next_layer: list[Value] = []
-            for i in range(0, len(layer), 2):
-                if i + 1 < len(layer):
-                    left = layer[i]
-                    right = layer[i + 1]
-                    next_layer.append(Mux(right < left, right, left))
-                else:
-                    next_layer.append(layer[i])
-            layer = next_layer
-        return layer[0]
-
     def elaborate(self, platform):
         m = TModule()
         m.submodules += self.rows
@@ -94,12 +76,25 @@ class CountMinSketch(Elaboratable):
             for row in self.rows:
                 row.insert(m, data=data)
 
+        min_tree = [Signal(self.counter_width) for _ in range(2 * self.depth)]
+
         @def_method(m, self.query_resp)
         def _():
             row_results = [row.query_resp(m) for row in self.rows]
             count_signals = [r["count"] for r in row_results]
-            min_count = self._tree_min(count_signals)
-            return {"count": min_count, "valid": row_results[0]["valid"]}
+
+            for i in range(len(count_signals)):
+                m.d.comb += min_tree[self.depth + i].eq(count_signals[i])
+            for i in range(1, self.depth):
+                m.d.comb += min_tree[i].eq(
+                    Mux(
+                        min_tree[2 * i] < min_tree[2 * i + 1],
+                        min_tree[2 * i],
+                        min_tree[2 * i + 1],
+                    )
+                )
+
+            return {"count": min_tree[1], "valid": row_results[0]["valid"]}
 
         @def_method(m, self.query_req)
         def _(data):
