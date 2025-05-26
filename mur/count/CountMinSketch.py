@@ -1,5 +1,6 @@
 from amaranth import *
 from transactron import *
+from amaranth.utils import ceil_log2
 
 from mur.count.CountHashTab import CountHashTab
 
@@ -77,24 +78,30 @@ class CountMinSketch(Elaboratable):
                 row.insert(m, data=data)
 
         min_tree = [Signal(self.counter_width) for _ in range(2 * self.depth)]
+        valid_depth = [Signal(1) for _ in range(ceil_log2(self.depth) + 1)]
+        for i in range(len(valid_depth)):
+            if i == len(valid_depth) - 1:
+                m.d.sync += valid_depth[i].eq(0)
+            else:
+                m.d.sync += valid_depth[i].eq(valid_depth[i + 1])
+        for i in range(1, self.depth):
+            m.d.sync += min_tree[i].eq(
+                Mux(
+                    min_tree[2 * i] < min_tree[2 * i + 1],
+                    min_tree[2 * i],
+                    min_tree[2 * i + 1],
+                )
+            )
+        with Transaction().body(m):
+            row_results = [row.query_resp(m) for row in self.rows]
+            count_signals = [r["count"] for r in row_results]
+            for i in range(len(count_signals)):
+                m.d.sync += min_tree[self.depth + i].eq(count_signals[i])
+            m.d.sync += valid_depth[len(valid_depth) - 1].eq(row_results[0]["valid"])
 
         @def_method(m, self.query_resp)
         def _():
-            row_results = [row.query_resp(m) for row in self.rows]
-            count_signals = [r["count"] for r in row_results]
-
-            for i in range(len(count_signals)):
-                m.d.comb += min_tree[self.depth + i].eq(count_signals[i])
-            for i in range(1, self.depth):
-                m.d.comb += min_tree[i].eq(
-                    Mux(
-                        min_tree[2 * i] < min_tree[2 * i + 1],
-                        min_tree[2 * i],
-                        min_tree[2 * i + 1],
-                    )
-                )
-
-            return {"count": min_tree[1], "valid": row_results[0]["valid"]}
+            return {"count": min_tree[1], "valid": valid_depth[0]}
 
         @def_method(m, self.query_req)
         def _(data):
