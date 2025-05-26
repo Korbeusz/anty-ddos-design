@@ -171,11 +171,18 @@ class ParserCMSVol(Elaboratable):
             self._fifo_output_unfiltered.write(m, arg)
 
         # PARSING
+        packet_chunk = Signal(layouts.parser_in_layout)
+        packet_chunk_valid = Signal(1, init=0)
 
-        with Transaction().body(m):
-            word0 = self._fifo_parsing_in.read(m)
-            eth_out = self._eth_parser.step(m, word0)
+        self.ethernet_parser_trans = Transaction(name="ethernet_parser")
+        with self.ethernet_parser_trans.body(m,request=packet_chunk_valid):
+            eth_out = self._eth_parser.step(m, packet_chunk)
             self._aligner1.din(m, eth_out)
+            m.d.sync += packet_chunk_valid.eq(0)
+
+        with Transaction().body(m, request=(~packet_chunk_valid) | self.ethernet_parser_trans.grant):
+            m.d.sync += packet_chunk.eq(self._fifo_parsing_in.read(m))
+            m.d.sync += packet_chunk_valid.eq(1)
 
         with Transaction().body(m):
             al1 = self._aligner1.dout(m)

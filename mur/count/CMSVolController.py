@@ -145,7 +145,6 @@ class CMSVolController(Elaboratable):
                 self.rcms_dportdip.change_roles(m)
                 self.rcms_siplen.change_roles(m)
 
-
         self._inserts_difference = Signal(32)
         m.d.comb += self._inserts_difference.eq(
             self._insert_requested - self._insert_received
@@ -157,26 +156,32 @@ class CMSVolController(Elaboratable):
         self._query_decision = Signal(32)
         self._out = Signal(32)
         self._out_valid = Signal(1)
+        q1_data = Signal(32)
+        q2_data = Signal(32)
+        q3_data = Signal(32)
+        q_valid = Signal(1)
         m.d.sync += self._out_valid.eq(0)
         with Transaction().body(m):
-            q1 = self.rcms_sipdip.output(m)
-            q2 = self.rcms_dportdip.output(m)
-            q3 = self.rcms_siplen.output(m)
-            with m.If(self._all_query_received & self._inserts_difference):
-                m.d.sync += self._out.eq(self._inserts_difference)
-                m.d.sync += self._insert_received.eq(self._insert_requested)
-                m.d.sync += self._out_valid.eq(1)
-            with m.If(~self._all_query_received & q1["valid"]):
-                m.d.sync += self._out_valid.eq(1)
-                m.d.sync += self._query_received.eq(self._query_received + 1)
-                m.d.sync += self._out.eq(
-                    Mux(
-                        q1["count"] + q2["count"] + q3["count"]
-                        > self.discover_threshold,
-                        1,
-                        0,
-                    )
+            q = self.rcms_sipdip.output(m)
+            m.d.sync += q1_data.eq(q["count"])
+            m.d.sync += q2_data.eq(self.rcms_dportdip.output(m)["count"])
+            m.d.sync += q3_data.eq(self.rcms_siplen.output(m)["count"])
+            m.d.sync += q_valid.eq(q["valid"])
+
+        with m.If(self._all_query_received & self._inserts_difference):
+            m.d.sync += self._out.eq(self._inserts_difference)
+            m.d.sync += self._insert_received.eq(self._insert_requested)
+            m.d.sync += self._out_valid.eq(1)
+        with m.If(~self._all_query_received & q_valid):
+            m.d.sync += self._out_valid.eq(1)
+            m.d.sync += self._query_received.eq(self._query_received + 1)
+            m.d.sync += self._out.eq(
+                Mux(
+                    q1_data + q2_data + q3_data > self.discover_threshold,
+                    1,
+                    0,
                 )
+            )
         with Transaction().body(m, request=self._out_valid):
             self._fifo_out.write(m, {"data": self._out})
 
