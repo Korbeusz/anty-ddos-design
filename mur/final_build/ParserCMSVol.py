@@ -175,33 +175,53 @@ class ParserCMSVol(Elaboratable):
         packet_chunk_valid = Signal(1, init=0)
 
         self.ethernet_parser_trans = Transaction(name="ethernet_parser")
-        with self.ethernet_parser_trans.body(m,request=packet_chunk_valid):
+        with self.ethernet_parser_trans.body(m, request=packet_chunk_valid):
             eth_out = self._eth_parser.step(m, packet_chunk)
             self._aligner1.din(m, eth_out)
             m.d.sync += packet_chunk_valid.eq(0)
 
-        with Transaction().body(m, request=(~packet_chunk_valid) | self.ethernet_parser_trans.grant):
+        with Transaction().body(
+            m, request=(~packet_chunk_valid) | self.ethernet_parser_trans.grant
+        ):
             m.d.sync += packet_chunk.eq(self._fifo_parsing_in.read(m))
             m.d.sync += packet_chunk_valid.eq(1)
 
-        with Transaction().body(m):
-            al1 = self._aligner1.dout(m)
-            ip_in = {
-                "data": al1["data"],
-                "end_of_packet": al1["end_of_packet"],
-                "end_of_packet_len": al1["end_of_packet_len"],
-            }
-            ip_out = self._ip_parser.step(m, ip_in)
+        aligner1_out = Signal(layouts.parser_in_layout)
+        aligner1_valid = Signal(1, init=0)
+        self.ip_trans = Transaction(name="ip_parser")
+        with self.ip_trans.body(m, request=aligner1_valid):
+            ip_out = self._ip_parser.step(m, aligner1_out)
             self._aligner2.din(m, ip_out)
+            m.d.sync += aligner1_valid.eq(0)
+
+        with Transaction().body(m, request=(~aligner1_valid) | self._aligner2.din.ready):
+            al1_out = self._aligner1.dout(m)
+            m.d.sync += aligner1_out.eq(
+                Cat(
+                    al1_out["data"],
+                    al1_out["end_of_packet"],
+                    al1_out["end_of_packet_len"],
+                )
+            )
+            m.d.sync += aligner1_valid.eq(1)
+
+        aligner2_out = Signal(layouts.parser_in_layout)
+        aligner2_valid = Signal(1, init=0)
+        self.udp_trans = Transaction(name="udp_parser")
+        with self.udp_trans.body(m, request=aligner2_valid):
+            self._udp_parser.step(m, aligner2_out)
+            m.d.sync += aligner2_valid.eq(0)
 
         with Transaction().body(m):
-            al2 = self._aligner2.dout(m)
-            tr_in = {
-                "data": al2["data"],
-                "end_of_packet": al2["end_of_packet"],
-                "end_of_packet_len": al2["end_of_packet_len"],
-            }
-            self._udp_parser.step(m, tr_in)
+            al2_out = self._aligner2.dout(m)
+            m.d.sync += aligner2_out.eq(
+                Cat(
+                    al2_out["data"],
+                    al2_out["end_of_packet"],
+                    al2_out["end_of_packet_len"],
+                )
+            )
+            m.d.sync += aligner2_valid.eq(1)
 
         # FILTERING
         decision = Signal(32, init=0)

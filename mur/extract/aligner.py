@@ -107,8 +107,6 @@ class ParserAligner(Elaboratable):
                 # mask = (1 << l_size) - 1
                 # m.d.sync += output.eq(buffer & mask | data << l_size)
 
-                m.d.comb += remain.eq(octet_count - buffer_consumed)
-
                 for i in range(octet_count):
                     with m.If(i < remain):
                         m.d.sync += output.word_select(i, 8).eq(
@@ -156,9 +154,11 @@ class ParserAligner(Elaboratable):
                     m.d.sync += buffer.eq(data >> (octets_consumed * octet_bits))
                     m.d.sync += buffer_consumed.eq(octets_consumed)
                     m.d.sync += r_size.eq(octets_consumed * octet_bits)
+                    m.d.sync += remain.eq(octet_count - octets_consumed)
 
             with m.Else():
                 m.d.sync += buffer_consumed.eq(octet_count)
                 m.d.sync += r_size.eq(octet_count * octet_bits)
+                m.d.sync += remain.eq(0)
 
         return m
