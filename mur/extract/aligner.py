@@ -89,7 +89,7 @@ class ParserAligner(Elaboratable):
         @def_method(
             m,
             self.din_int,
-            ready=~buffer_end_pending.any() & ~(output_v & ~self.dout.run),
+            ready=~buffer_end_pending_flag,
         )
         def _(
             data,
@@ -144,14 +144,14 @@ class ParserAligner(Elaboratable):
                         0
                     )  # don't do anything until next extract_range_end
                 with m.Elif(end_of_packet):
-                    m.d.sync += output.eq(data >> (octets_consumed * octet_bits))
+                    m.d.sync += output.eq(data >> (octets_consumed << 3))
                     m.d.sync += output_v.eq(1)
                     m.d.sync += output_end_of_packet.eq(
                         end_of_packet_len - octets_consumed
                     )
                     m.d.sync += output_end_of_packet_flag.eq(1)
                 with m.Else():
-                    m.d.sync += buffer.eq(data >> (octets_consumed * octet_bits))
+                    m.d.sync += buffer.eq(data >> (octets_consumed << 3))
                     m.d.sync += buffer_consumed.eq(octets_consumed)
                     m.d.sync += r_size.eq(octets_consumed * octet_bits)
                     m.d.sync += remain.eq(octet_count - octets_consumed)
