@@ -75,7 +75,7 @@ class CountHashTab(Elaboratable):
 
         clr_running = Signal()
         clr_addr = Signal(range(self.size))
-        clr_waiting = Signal(range(16))
+        clr_waiting = Signal(range(64))
 
         m.d.sync += [
             wr.en.eq(0),
@@ -158,6 +158,6 @@ class CountHashTab(Elaboratable):
         @def_method(m, self.clear)
         def _():
             m.d.sync += clr_addr.eq(0)
-            m.d.sync += clr_waiting.eq(10)
+            m.d.sync += clr_waiting.eq(20)
 
         return m

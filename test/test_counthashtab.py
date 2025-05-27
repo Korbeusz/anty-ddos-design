@@ -91,7 +91,7 @@ class TestCountHashTab(TestCaseWithSimulator):
                 await self.dut.query_req.call_try(sim, {"data": data})
             else:  # kind == "clear"
                 await self.dut.clear.call_try(sim, {})
-                for idx in range(self.size + 10):
+                for idx in range(self.size + 20):
                     await sim.tick()  # wait for clear to finish
 
     async def checker_process(self, sim):
