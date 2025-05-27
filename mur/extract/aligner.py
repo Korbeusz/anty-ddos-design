@@ -23,22 +23,13 @@ class ParserAligner(Elaboratable):
     def __init__(self):
         layouts = ProtoParserLayouts()
 
-        self.din_forwarder = Forwarder(layouts.parser_out_layout)
-        self.din = self.din_forwarder.write
-
-        self.din_int = Method(i=layouts.parser_out_layout)
+        self.din = Method(i=layouts.parser_out_layout)
         self.dout = Method(o=layouts.align_out_layout)
 
         self.params = Params()
 
     def elaborate(self, platform):
         m = TModule()
-        # Forwarder is needed to hold input when buffer_end_pending condition is produced.
-        # it should not limit throughput as it balances out with output data
-        m.submodules.din_forwarder = self.din_forwarder
-        m.submodules.din_forwarder_connector = ConnectTrans(
-            self.din_forwarder.read, self.din_int
-        )
 
         buffer = Signal(self.params.word_bits)
         buffer_consumed = Signal(
@@ -83,14 +74,12 @@ class ParserAligner(Elaboratable):
 
         parser_fwd = Signal()
         r_size = Signal(range(octet_count * octet_bits + 1))
-        l_size = Signal(range(octet_count * octet_bits + 1))
-        mask = Signal(self.params.word_bits)
         remain = Signal(range(octet_count + 1))
 
         # second ready condition may be replaced with assert
         @def_method(
             m,
-            self.din_int,
+            self.din,
             ready=~buffer_end_pending_flag,
         )
         def _(
@@ -107,17 +96,17 @@ class ParserAligner(Elaboratable):
                 # l_size = ((octet_count - buffer_consumed) * octet_bits).as_unsigned()
                 # r_size = (buffer_consumed * octet_bits).as_unsigned()
                 # mask = (1 << l_size) - 1
-                m.d.sync += output.eq(buffer & mask | data << l_size)
+                # m.d.sync += output.eq(buffer & mask | data << l_size)
 
-                # for i in range(octet_count):
-                #     with m.If(i < remain):
-                #         m.d.sync += output.word_select(i, 8).eq(
-                #             buffer.word_select(i, 8)
-                #         )
-                #     with m.Else():
-                #         m.d.sync += output.word_select(i, 8).eq(
-                #             data.word_select((i - remain).as_unsigned(), 8)
-                #         )
+                for i in range(octet_count):
+                    with m.If(i < remain):
+                        m.d.sync += output.word_select(i, 8).eq(
+                            buffer.word_select(i, 8)
+                        )
+                    with m.Else():
+                        m.d.sync += output.word_select(i, 8).eq(
+                            data.word_select((i - remain).as_unsigned(), 8)
+                        )
                 m.d.sync += output_v.eq(1)
 
                 with m.If(end_of_packet):
@@ -156,17 +145,11 @@ class ParserAligner(Elaboratable):
                     m.d.sync += buffer.eq(data >> (octets_consumed << 3))
                     m.d.sync += buffer_consumed.eq(octets_consumed)
                     m.d.sync += r_size.eq(octets_consumed * octet_bits)
-                    m.d.sync += l_size.eq(((octet_count - octets_consumed) << 3))
-                    m.d.sync += mask.eq(
-                        (1 << ((octet_count - octets_consumed) << 3).as_unsigned()) - 1
-                    )
                     m.d.sync += remain.eq(octet_count - octets_consumed)
 
             with m.Else():
                 m.d.sync += buffer_consumed.eq(octet_count)
                 m.d.sync += r_size.eq(octet_count * octet_bits)
-                m.d.sync += l_size.eq(0)
-                m.d.sync += mask.eq(0)
                 m.d.sync += remain.eq(0)
 
         return m
