@@ -11,20 +11,19 @@
 # agreement for further details.
 
 
-set added_uncertainty_312mhz 0.48ns
-set added_uncertainty_390mhz 0.424ns
-
 
 set TRS_DIVIDED_OSC_CLK [get_clocks ALTERA_INSERTED_INTOSC_FOR_TRS|divided_osc_clk]
+create_clock -name CLK100_IN     -period 10  [get_ports CLK_100_B3I]
+
 set CLK100 [get_clocks u0|alt_e100s10_sys_pll_inst_outclk0]
+set CORE_CLK   [get_clocks  ucore_pll|iopll_0_outclk0] 
+
 create_clock -name {altera_reserved_tck} -period 40 [get_ports {altera_reserved_tck}]
 
 set RX_CORE_CLK [get_clocks ex_100g_inst|ex_100g_inst|xcvr|rx_clkout2|ch1]
 set TX_CORE_CLK [get_clocks ex_100g_inst|ex_100g_inst|xcvr|tx_clkout2|ch1]
 
 set_clock_groups -exclusive -group $TX_CORE_CLK -group $RX_CORE_CLK -group $TRS_DIVIDED_OSC_CLK -group $CLK100 -group clk_ref_r
-
-set_clock_groups -exclusive -group $TX_CORE_CLK -group $RX_CORE_CLK -group $TRS_DIVIDED_OSC_CLK -group $CLK100  -group clk_ref_r
 
 
 #set_false_path -from [get_keepers {cpu_resetn}]
@@ -36,10 +35,10 @@ set_false_path -to   [get_ports {LED[*]}]
 
 #set LPMODE  [get_keepers qsfp_lowpwr]
 #set RESETL  [get_keepers qsfp_rstn]
-set LPMODE  [get_keepers QSFP28A_LP_MODE]
-set RESETL  [get_keepers QSFP28A_RST_n]
-#set LPMODE  [get_keepers QSFP28B_LP_MODE]
-#set RESETL  [get_keepers QSFP28B_RST_n]
+#set LPMODE  [get_keepers QSFP28A_LP_MODE]
+#set RESETL  [get_keepers QSFP28A_RST_n]
+set LPMODE  [get_keepers QSFP28B_LP_MODE]
+set RESETL  [get_keepers QSFP28B_RST_n]
 #set LPMODE  [get_keepers QSFP28C_LP_MODE]
 #set RESETL  [get_keepers QSFP28C_RST_n]
 #set LPMODE  [get_keepers QSFP28D_LP_MODE]
@@ -97,4 +96,8 @@ set_clock_groups -exclusive -group $CLK100      -group [get_clocks {u0|alt_e100s
 set_clock_groups -exclusive -group [get_clocks {u0|alt_e100s10_sys_pll_inst_refclk}] -group $CLK100
 
 
+
+set_clock_groups -asynchronous -group $RX_CORE_CLK -group $CORE_CLK
+set_clock_groups -asynchronous -group $TX_CORE_CLK -group $CORE_CLK
+derive_clock_uncertainty
 
