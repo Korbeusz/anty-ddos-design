@@ -1,6 +1,7 @@
 from amaranth import *
 from amaranth.utils import ceil_log2
 from transactron import Method, def_method, TModule
+
 __all__ = ["VolCounter"]
 
 
@@ -65,8 +66,10 @@ class VolCounter(Elaboratable):
                 m.d.sync += acc.eq(data)
 
         mode = Signal(1)
+        mode_set_ready = Signal()
+        m.d.sync += mode_set_ready.eq((counter + 1) == (self.window - 1))
 
-        @def_method(m, self.result, ready=(counter == self.window - 1))
+        @def_method(m, self.result, ready=mode_set_ready)
         def _result():
             m.d.comb += mode.eq(Mux(acc > self.threshold, 1, 0))
             return {"mode": mode}
