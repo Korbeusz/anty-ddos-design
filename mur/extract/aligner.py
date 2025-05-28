@@ -5,9 +5,6 @@ from transactron.lib.connectors import ConnectTrans, Forwarder
 
 from mur.params import Params
 from .interfaces import ProtoParserLayouts
-from transactron.lib import logging
-
-log = logging.HardwareLogger("extract.aligner")
 
 
 class ParserAligner(Elaboratable):
@@ -66,13 +63,11 @@ class ParserAligner(Elaboratable):
                 m.d.sync += output_end_of_packet_flag.eq(1)
                 m.d.sync += output_end_of_packet.eq(buffer_end_pending)
                 m.d.sync += output.eq(buffer)
-                log.debug(m, True, "output buffer_end_pending_flag set)")
             with m.Else():
                 m.d.sync += output_v.eq(0)
                 m.d.sync += output_end_of_packet_flag.eq(0)
                 m.d.sync += output_end_of_packet.eq(0)
                 m.d.sync += output.eq(0)
-                log.debug(m, True, "output buffer_end_pending_flag not set)")
 
             return {
                 "data": output,
@@ -140,15 +135,6 @@ class ParserAligner(Elaboratable):
             with m.Elif(extract_range_end):
                 m.d.sync += output_next_protocol.eq(next_proto)
                 m.d.sync += parser_fwd.eq(~end_of_packet)
-                log.debug(
-                    m,
-                    True,
-                    "end of packet {:x}, buffer_end_pending_flag: {:x}, self.dout.run: {:x}, output_v: {:x}",
-                    end_of_packet,
-                    buffer_end_pending_flag,
-                    self.dout.run,
-                    output_v,
-                )
 
                 with m.If(error_drop):  # Drop errors should be forwarded in result flow
                     # output buffer is already in clean state
