@@ -76,8 +76,8 @@ class ParserAligner(Elaboratable):
             }
 
         parser_fwd = Signal()
-        r_size = Signal(range(octet_count * octet_bits + 1))
-        remain = Signal(range(octet_count + 1))
+        r_size = Signal(range(octet_count // 2 + 1))
+        remain = Signal(range(octet_count // 2 + 1))
 
         # second ready condition may be replaced with assert
         @def_method(
@@ -101,14 +101,14 @@ class ParserAligner(Elaboratable):
                 # mask = (1 << l_size) - 1
                 # m.d.sync += output.eq(buffer & mask | data << l_size)
 
-                for i in range(octet_count):
+                for i in range(octet_count // 2):
                     with m.If(i < remain):
-                        m.d.sync += output.word_select(i, 8).eq(
-                            buffer.word_select(i, 8)
+                        m.d.sync += output.word_select(i, 16).eq(
+                            buffer.word_select(i, 16)
                         )
                     with m.Else():
-                        m.d.sync += output.word_select(i, 8).eq(
-                            data.word_select((i - remain).as_unsigned(), 8)
+                        m.d.sync += output.word_select(i, 16).eq(
+                            data.word_select((i - remain).as_unsigned(), 16)
                         )
                 m.d.sync += output_v.eq(1)
 
@@ -121,19 +121,18 @@ class ParserAligner(Elaboratable):
                         m.d.sync += output_end_of_packet_flag.eq(1)
                         m.d.sync += buffer_v.eq(0)
                     with m.Else():
-                        m.d.sync += buffer.eq(data >> r_size)
+                        m.d.sync += buffer.eq(data >> (r_size << 4))
                         m.d.sync += buffer_v.eq(1)
                         m.d.sync += buffer_end_pending_flag.eq(1)
                         m.d.sync += buffer_end_pending.eq(
                             end_of_packet_len - buffer_consumed
                         )
                 with m.Else():
-                    m.d.sync += buffer.eq(data >> r_size)
+                    m.d.sync += buffer.eq(data >> (r_size << 4))
                     with m.If(output_v):
                         m.d.sync += buffer_v.eq(1)
 
             with m.Elif(extract_range_end):
-                m.d.sync += output_next_protocol.eq(next_proto)
                 m.d.sync += parser_fwd.eq(~end_of_packet)
 
                 with m.If(error_drop):  # Drop errors should be forwarded in result flow
@@ -153,8 +152,8 @@ class ParserAligner(Elaboratable):
                     m.d.sync += buffer.eq(data >> (octets_consumed << 3))
                     m.d.sync += buffer_v.eq(1)
                     m.d.sync += buffer_consumed.eq(octets_consumed)
-                    m.d.sync += r_size.eq(octets_consumed * octet_bits)
-                    m.d.sync += remain.eq(octet_count - octets_consumed)
+                    m.d.sync += r_size.eq(octets_consumed >> 1)
+                    m.d.sync += remain.eq((octet_count >> 1) - (octets_consumed >> 1))
                     m.d.sync += buffer_end_pending_flag.eq(1)
                     m.d.sync += buffer_end_pending.eq(
                         end_of_packet_len - octets_consumed
@@ -165,8 +164,8 @@ class ParserAligner(Elaboratable):
                     m.d.sync += buffer.eq(data >> (octets_consumed << 3))
                     m.d.sync += buffer_v.eq(1)
                     m.d.sync += buffer_consumed.eq(octets_consumed)
-                    m.d.sync += r_size.eq(octets_consumed * octet_bits)
-                    m.d.sync += remain.eq(octet_count - octets_consumed)
+                    m.d.sync += r_size.eq(octets_consumed >> 1)
+                    m.d.sync += remain.eq((octet_count >> 1) - (octets_consumed >> 1))
                     m.d.sync += buffer_end_pending_flag.eq(1)
                     m.d.sync += buffer_end_pending.eq(
                         end_of_packet_len - octets_consumed
@@ -187,12 +186,12 @@ class ParserAligner(Elaboratable):
                     m.d.sync += buffer.eq(data >> (octets_consumed << 3))
                     m.d.sync += buffer_v.eq(1)
                     m.d.sync += buffer_consumed.eq(octets_consumed)
-                    m.d.sync += r_size.eq(octets_consumed * octet_bits)
-                    m.d.sync += remain.eq(octet_count - octets_consumed)
+                    m.d.sync += r_size.eq(octets_consumed >> 1)
+                    m.d.sync += remain.eq((octet_count >> 1) - (octets_consumed >> 1))
 
             with m.Else():
                 m.d.sync += buffer_consumed.eq(octet_count)
-                m.d.sync += r_size.eq(octet_count * octet_bits)
+                m.d.sync += r_size.eq(octet_count >> 1)
                 m.d.sync += remain.eq(0)
 
         return m

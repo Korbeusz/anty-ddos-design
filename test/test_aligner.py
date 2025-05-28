@@ -46,12 +46,13 @@ class TestAligner(TestCaseWithSimulator):
                 0
                 if len(p) < 1
                 else randint(
-                    1,
+                    0,
                     min(
-                        self.octets_in_word,
-                        len(p) - fully_consumed_words * self.octets_in_word,
+                        self.octets_in_word // 2,
+                        (len(p) - fully_consumed_words * self.octets_in_word) // 2,
                     ),
                 )
+                * 2
             )
             next_proto = randint(0, 1)
             error = randint(0, 2) == 0
