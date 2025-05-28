@@ -179,17 +179,11 @@ class ParserCMSVol(Elaboratable):
             self._aligner1.din(m, eth_out)
             m.d.sync += eth_out_valid.eq(0)
         self.ethernet_parser_trans = Transaction(name="ethernet_parser")
-        with self.ethernet_parser_trans.body(
-            m,
-            request=packet_chunk_valid & ((~eth_out_valid) | self._aligner1.din.ready),
-        ):
+        with self.ethernet_parser_trans.body(m, request=packet_chunk_valid):
             m.d.sync += eth_out.eq(self._eth_parser.step(m, packet_chunk))
             m.d.sync += eth_out_valid.eq(1)
             m.d.sync += packet_chunk_valid.eq(0)
-        with Transaction().body(
-            m,
-            request=(~packet_chunk_valid) | (~eth_out_valid) | self._aligner1.din.ready,
-        ):
+        with Transaction().body(m):
             m.d.sync += packet_chunk.eq(self._fifo_parsing_in.read(m))
             m.d.sync += packet_chunk_valid.eq(1)
 
