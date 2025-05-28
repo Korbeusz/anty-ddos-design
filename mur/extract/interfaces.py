@@ -37,7 +37,7 @@ class ProtoParserLayouts:
         Value of 0 is reserved to unknown protocol. It should represent enum located at `<parser_class>.ProtoOut`.
         """
 
-        self.align_out_layout = extend_layout(self.parser_in_layout, self.next_protocol)
+        self.align_out_layout = self.parser_in_layout
 
         self.data_out = ("data", Params().word_bits)
         """

@@ -5,6 +5,9 @@ from transactron.lib.connectors import ConnectTrans, Forwarder
 
 from mur.params import Params
 from .interfaces import ProtoParserLayouts
+from transactron.lib import logging
+
+log = logging.HardwareLogger("extract.aligner")
 
 
 class ParserAligner(Elaboratable):
@@ -50,26 +53,31 @@ class ParserAligner(Elaboratable):
 
         octet_bits = 8  # Single octet (1 byte)
         octet_count = self.params.word_bits // octet_bits  # Number of octets in a word
+        buffer_v = Signal()
 
-        @def_method(m, self.dout, ready=output_v | buffer_end_pending_flag)
+        @def_method(m, self.dout, ready=output_v)
         def _():
-            m.d.sync += output_v.eq(0)
-            with m.If(~output_v):
+
+            with m.If(buffer_end_pending_flag):
                 m.d.sync += buffer_end_pending_flag.eq(0)
                 m.d.sync += buffer_end_pending.eq(0)
-            m.d.sync += output_end_of_packet_flag.eq(0)
-            m.d.sync += output_end_of_packet.eq(0)
-
-            end_of_packet_len = Mux(output_v, output_end_of_packet, buffer_end_pending)
-            end_of_packet_flag = Mux(
-                output_v, output_end_of_packet_flag, buffer_end_pending_flag
-            )
+                m.d.sync += buffer_v.eq(0)
+                m.d.sync += output_v.eq(1)
+                m.d.sync += output_end_of_packet_flag.eq(1)
+                m.d.sync += output_end_of_packet.eq(buffer_end_pending)
+                m.d.sync += output.eq(buffer)
+                log.debug(m, True, "output buffer_end_pending_flag set)")
+            with m.Else():
+                m.d.sync += output_v.eq(0)
+                m.d.sync += output_end_of_packet_flag.eq(0)
+                m.d.sync += output_end_of_packet.eq(0)
+                m.d.sync += output.eq(0)
+                log.debug(m, True, "output buffer_end_pending_flag not set)")
 
             return {
-                "data": Mux(output_v, output, buffer),
-                "next_proto": output_next_protocol,
-                "end_of_packet": end_of_packet_flag,
-                "end_of_packet_len": end_of_packet_len,
+                "data": output,
+                "end_of_packet": output_end_of_packet_flag,
+                "end_of_packet_len": output_end_of_packet,
             }
 
         parser_fwd = Signal()
@@ -80,7 +88,7 @@ class ParserAligner(Elaboratable):
         @def_method(
             m,
             self.din,
-            ready=~buffer_end_pending_flag,
+            ready=(~buffer_v) | (self.dout.run) | parser_fwd,
         )
         def _(
             data,
@@ -116,25 +124,73 @@ class ParserAligner(Elaboratable):
                             end_of_packet_len + (octet_count - buffer_consumed)
                         )
                         m.d.sync += output_end_of_packet_flag.eq(1)
+                        m.d.sync += buffer_v.eq(0)
                     with m.Else():
                         m.d.sync += buffer.eq(data >> r_size)
+                        m.d.sync += buffer_v.eq(1)
                         m.d.sync += buffer_end_pending_flag.eq(1)
                         m.d.sync += buffer_end_pending.eq(
                             end_of_packet_len - buffer_consumed
                         )
                 with m.Else():
                     m.d.sync += buffer.eq(data >> r_size)
+                    with m.If(output_v):
+                        m.d.sync += buffer_v.eq(1)
 
             with m.Elif(extract_range_end):
-                m.d.sync += parser_fwd.eq(~end_of_packet)
                 m.d.sync += output_next_protocol.eq(next_proto)
+                m.d.sync += parser_fwd.eq(~end_of_packet)
+                log.debug(
+                    m,
+                    True,
+                    "end of packet {:x}, buffer_end_pending_flag: {:x}, self.dout.run: {:x}, output_v: {:x}",
+                    end_of_packet,
+                    buffer_end_pending_flag,
+                    self.dout.run,
+                    output_v,
+                )
 
                 with m.If(error_drop):  # Drop errors should be forwarded in result flow
                     # output buffer is already in clean state
                     m.d.sync += parser_fwd.eq(
                         0
                     )  # don't do anything until next extract_range_end
-                with m.Elif(end_of_packet):
+                with m.Elif(end_of_packet & ~buffer_end_pending_flag & self.dout.run):
+                    m.d.sync += output.eq(data >> (octets_consumed << 3))
+                    m.d.sync += output_v.eq(1)
+                    m.d.sync += output_end_of_packet.eq(
+                        end_of_packet_len - octets_consumed
+                    )
+                    m.d.sync += output_end_of_packet_flag.eq(1)
+
+                with m.Elif(end_of_packet & buffer_end_pending_flag & self.dout.run):
+                    m.d.sync += buffer.eq(data >> (octets_consumed << 3))
+                    m.d.sync += buffer_v.eq(1)
+                    m.d.sync += buffer_consumed.eq(octets_consumed)
+                    m.d.sync += r_size.eq(octets_consumed * octet_bits)
+                    m.d.sync += remain.eq(octet_count - octets_consumed)
+                    m.d.sync += buffer_end_pending_flag.eq(1)
+                    m.d.sync += buffer_end_pending.eq(
+                        end_of_packet_len - octets_consumed
+                    )
+                with m.Elif(
+                    end_of_packet & ~buffer_end_pending_flag & ~self.dout.run & output_v
+                ):
+                    m.d.sync += buffer.eq(data >> (octets_consumed << 3))
+                    m.d.sync += buffer_v.eq(1)
+                    m.d.sync += buffer_consumed.eq(octets_consumed)
+                    m.d.sync += r_size.eq(octets_consumed * octet_bits)
+                    m.d.sync += remain.eq(octet_count - octets_consumed)
+                    m.d.sync += buffer_end_pending_flag.eq(1)
+                    m.d.sync += buffer_end_pending.eq(
+                        end_of_packet_len - octets_consumed
+                    )
+                with m.Elif(
+                    end_of_packet
+                    & ~buffer_end_pending_flag
+                    & ~self.dout.run
+                    & ~output_v
+                ):
                     m.d.sync += output.eq(data >> (octets_consumed << 3))
                     m.d.sync += output_v.eq(1)
                     m.d.sync += output_end_of_packet.eq(
@@ -143,6 +199,7 @@ class ParserAligner(Elaboratable):
                     m.d.sync += output_end_of_packet_flag.eq(1)
                 with m.Else():
                     m.d.sync += buffer.eq(data >> (octets_consumed << 3))
+                    m.d.sync += buffer_v.eq(1)
                     m.d.sync += buffer_consumed.eq(octets_consumed)
                     m.d.sync += r_size.eq(octets_consumed * octet_bits)
                     m.d.sync += remain.eq(octet_count - octets_consumed)

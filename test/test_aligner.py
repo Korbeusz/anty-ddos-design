@@ -116,7 +116,6 @@ class TestAligner(TestCaseWithSimulator):
                             "end_of_packet_len": end_of_packet_from_index(remaining, i)[
                                 1
                             ],
-                            "next_proto": next_proto,
                         }
                     )
                 if not remaining:
@@ -125,7 +124,6 @@ class TestAligner(TestCaseWithSimulator):
                             "data": 0,
                             "end_of_packet": True,
                             "end_of_packet_len": 0,
-                            "next_proto": next_proto,
                         }
                     )
 
@@ -143,7 +141,7 @@ class TestAligner(TestCaseWithSimulator):
             if self.inputq[0]["end_of_packet"]:
                 print("===========")
 
-            await self.dut.din.call(sim, self.inputq.popleft())
+            await self.dut.din.call_try(sim, self.inputq.popleft())
 
     async def dout_process(self, sim):
         while self.outputq:
