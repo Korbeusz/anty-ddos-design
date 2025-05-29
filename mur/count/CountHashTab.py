@@ -100,9 +100,6 @@ class CountHashTab(Elaboratable):
             m.d.sync += increment_addr.eq(rd.addr)
 
         with m.If(req_save):
-            with m.If(insert_writing & (wr.addr == increment_addr)):
-                m.d.sync += req_read_value.eq(wr.data)
-            with m.Else():
                 m.d.sync += req_read_value.eq(rd.data)
 
         with Transaction().body(m):
