@@ -230,7 +230,7 @@ class ParserCMSVol(Elaboratable):
             m.d.sync += aligner2_valid.eq(1)
 
         # FILTERING
-        decision = Signal(32, init=0)
+        decision = Signal(5, init=0)
         decision_valid = Signal(1, init=0)
 
         with Transaction().body(m, request=~decision_valid):

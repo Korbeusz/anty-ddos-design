@@ -57,12 +57,13 @@ class CMSVolController(Elaboratable):
         self.discover_threshold = discard_threshold
         lay32 = [("data", 32)]
         lay16 = [("data", 16)]
+        lay5 = [("data", 5)]
 
         self._fifo_sip = BasicFifo(lay32, fifo_depth)
         self._fifo_dip = BasicFifo(lay32, fifo_depth)
         self._fifo_dport = BasicFifo(lay16, fifo_depth)
         self._fifo_len = BasicFifo(lay16, fifo_depth)
-        self._fifo_out = BasicFifo(lay32, fifo_depth)
+        self._fifo_out = BasicFifo(lay5, fifo_depth)
         self.out = self._fifo_out.read
 
         self.push_a = self._fifo_sip.write
@@ -145,7 +146,7 @@ class CMSVolController(Elaboratable):
                 self.rcms_dportdip.change_roles(m)
                 self.rcms_siplen.change_roles(m)
 
-        self._inserts_difference = Signal(32)
+        self._inserts_difference = Signal(5)
         m.d.comb += self._inserts_difference.eq(
             self._insert_requested - self._insert_received
         )
@@ -154,7 +155,7 @@ class CMSVolController(Elaboratable):
             self._query_requested == self._query_received
         )
         self._query_decision = Signal(32)
-        self._out = Signal(32)
+        self._out = Signal(5)
         self._out_valid = Signal(1)
         q1_data = Signal(32)
         q2_data = Signal(32)
