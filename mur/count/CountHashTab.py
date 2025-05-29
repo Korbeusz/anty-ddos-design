@@ -62,7 +62,7 @@ class CountHashTab(Elaboratable):
         m.submodules += [self._mem, self.insert_hash, self.query_hash]
 
         wr = self._mem.write_port(domain="sync")
-        rd = self._mem.read_port(domain="sync", transparent_for=(wr,))
+        rd = self._mem.read_port(domain="sync")
 
         req_start = Signal()
         req_save = Signal()
@@ -116,16 +116,22 @@ class CountHashTab(Elaboratable):
         write_addr = Signal(range(self.size))
         with m.If(inc_start):
             m.d.sync += write_addr.eq(rd.addr)
+
+        write_addr2 = Signal(range(self.size))
+        write_data = Signal(self.counter_width)
         with m.If(insert_incrementing):
-            with m.If(insert_writing & (wr.addr == write_addr)):
-                m.d.sync += [
-                    wr.en.eq(1),
-                    wr.addr.eq(write_addr),
-                    wr.data.eq(wr.data + 1),
-                ]
-            with m.Else():
-                m.d.sync += wr.data.eq(rd.data + 1)
-                m.d.sync += [wr.en.eq(1), wr.addr.eq(write_addr)]
+            # with m.If(insert_writing & (wr.addr == write_addr)):
+            #     m.d.sync += [
+            #         wr.en.eq(1),
+            #         wr.addr.eq(write_addr),
+            #         wr.data.eq(wr.data + 1),
+            #     ]
+            # with m.Else():
+            m.d.sync += [write_data.eq(rd.data), write_addr2.eq(write_addr)]
+
+        with m.If(insert_writing):
+            m.d.sync += wr.data.eq(write_data + 1)
+            m.d.sync += [wr.en.eq(1), wr.addr.eq(write_addr2)]
 
         with m.If(clr_waiting > 0):
             m.d.sync += clr_waiting.eq(clr_waiting - 1)

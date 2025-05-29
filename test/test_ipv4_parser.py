@@ -295,7 +295,7 @@ class TestIPv4Parser(TestCaseWithSimulator):
         self.expected_step_outputs = [
             # 1. ipv4_in_1 (IHL=5)
             {
-                "octets_consumed": 20,
+                "octets_consumed": 10,
                 "extract_range_end": 1,
                 "next_proto": IPv4Parser.ProtoOut.TCP,
                 "end_of_packet_len": 64,
@@ -304,7 +304,7 @@ class TestIPv4Parser(TestCaseWithSimulator):
             },
             # 2. multi_ipv4_in_2_chunk1 (IHL=6)
             {
-                "octets_consumed": 24,
+                "octets_consumed": 12,
                 "extract_range_end": 1,
                 "next_proto": IPv4Parser.ProtoOut.TCP,
                 "end_of_packet_len": 0,
@@ -322,7 +322,7 @@ class TestIPv4Parser(TestCaseWithSimulator):
             },
             # 4. multi_ipv4_in_3_chunk1 (IHL=5)
             {
-                "octets_consumed": 20,
+                "octets_consumed": 10,
                 "extract_range_end": 1,
                 "next_proto": IPv4Parser.ProtoOut.TCP,
                 "end_of_packet_len": 0,
@@ -340,7 +340,7 @@ class TestIPv4Parser(TestCaseWithSimulator):
             },
             # 6. short_in_4
             {
-                "octets_consumed": 20,
+                "octets_consumed": 10,
                 "extract_range_end": 1,
                 "next_proto": 0,
                 "end_of_packet_len": 12,
@@ -349,7 +349,7 @@ class TestIPv4Parser(TestCaseWithSimulator):
             },
             # 7. ipv4_in_5 (IHL=15)
             {
-                "octets_consumed": 60,
+                "octets_consumed": 30,
                 "extract_range_end": 1,
                 "next_proto": IPv4Parser.ProtoOut.TCP,
                 "end_of_packet_len": 64,
@@ -358,7 +358,7 @@ class TestIPv4Parser(TestCaseWithSimulator):
             },
             # 8. multi_ipv4_in_6_chunk1 (IHL=5)
             {
-                "octets_consumed": 20,
+                "octets_consumed": 10,
                 "extract_range_end": 1,
                 "next_proto": IPv4Parser.ProtoOut.TCP,
                 "end_of_packet_len": 0,
@@ -385,7 +385,7 @@ class TestIPv4Parser(TestCaseWithSimulator):
             },
             # 11. multi_ipv4_in_7_chunk1 (IHL=5)
             {
-                "octets_consumed": 20,
+                "octets_consumed": 10,
                 "extract_range_end": 1,
                 "next_proto": IPv4Parser.ProtoOut.UDP,
                 "end_of_packet_len": 0,

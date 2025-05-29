@@ -10,7 +10,6 @@ from mur.extract.interfaces import ProtoParserLayouts
 from enum import IntFlag, auto
 
 
-
 class EthernetParser(Elaboratable):
     class ResultLayouts:
         def __init__(self):
@@ -77,10 +76,10 @@ class EthernetParser(Elaboratable):
                 ~end_of_packet
             )  # end of packet is always needed if module seen start of it
 
-            packet_length = Mux(parsed.vlan_v, 18, 14)
+            packet_length = Mux(parsed.vlan_v, 9, 7)
 
             m.d.av_comb += runt_packet.eq(
-                (packet_length > end_of_packet_len) & end_of_packet
+                ((packet_length << 1) > end_of_packet_len) & end_of_packet
             )
 
             with m.If(~parsing_finished):

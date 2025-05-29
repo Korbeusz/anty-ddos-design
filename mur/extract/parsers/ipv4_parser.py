@@ -10,7 +10,6 @@ from mur.extract.interfaces import ProtoParserLayouts
 from enum import IntFlag, auto
 
 
-
 class IPv4Parser(Elaboratable):
     class ResultLayouts:
         def __init__(self):
@@ -62,7 +61,7 @@ class IPv4Parser(Elaboratable):
             )  # Bits 0-3 (low nibble)
 
             # Calculate header length in bytes
-            header_length_bytes = parsed.header_length * 4
+            header_length_bytes = parsed.header_length * 2
 
             # Extract other fields (example, adjust as per your layout)
             m.d.av_comb += [
@@ -84,7 +83,7 @@ class IPv4Parser(Elaboratable):
 
             # Check for runt packet
             m.d.av_comb += runt_packet.eq(
-                (header_length_bytes > end_of_packet_len) & end_of_packet
+                ((header_length_bytes << 1) > end_of_packet_len) & end_of_packet
             )
             m.d.sync += parsing_finished.eq(~end_of_packet)
 

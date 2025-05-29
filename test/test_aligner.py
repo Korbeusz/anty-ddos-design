@@ -52,7 +52,6 @@ class TestAligner(TestCaseWithSimulator):
                         (len(p) - fully_consumed_words * self.octets_in_word) // 2,
                     ),
                 )
-                * 2
             )
             next_proto = randint(0, 1)
             error = randint(0, 2) == 0
@@ -105,7 +104,7 @@ class TestAligner(TestCaseWithSimulator):
             if not error:
                 remaining = p[
                     fully_consumed_words * self.octets_in_word
-                    + partial_consumed_length_octets :
+                    + 2 * partial_consumed_length_octets :
                 ]
                 for i in range(
                     (len(remaining) + self.octets_in_word - 1) // self.octets_in_word

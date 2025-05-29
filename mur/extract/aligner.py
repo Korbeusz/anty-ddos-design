@@ -141,34 +141,59 @@ class ParserAligner(Elaboratable):
                         0
                     )  # don't do anything until next extract_range_end
                 with m.Elif(end_of_packet & ~buffer_end_pending_flag & self.dout.run):
-                    m.d.sync += output.eq(data >> (octets_consumed << 3))
+                    for i in range(octet_count // 2):
+                        with m.If(i < octet_count - octets_consumed):
+                            m.d.sync += output.word_select(i, 16).eq(
+                                data.word_select(
+                                    (i + octets_consumed).as_unsigned(), 16
+                                )
+                            )
+                        with m.Else():
+                            m.d.sync += output.word_select(i, 16).eq(0)
                     m.d.sync += output_v.eq(1)
                     m.d.sync += output_end_of_packet.eq(
-                        end_of_packet_len - octets_consumed
+                        end_of_packet_len - (octets_consumed << 1)
                     )
                     m.d.sync += output_end_of_packet_flag.eq(1)
 
                 with m.Elif(end_of_packet & buffer_end_pending_flag & self.dout.run):
-                    m.d.sync += buffer.eq(data >> (octets_consumed << 3))
+                    for i in range(octet_count // 2):
+                        with m.If(i < octet_count - octets_consumed):
+                            m.d.sync += buffer.word_select(i, 16).eq(
+                                data.word_select(
+                                    (i + octets_consumed).as_unsigned(), 16
+                                )
+                            )
+                        with m.Else():
+                            m.d.sync += buffer.word_select(i, 16).eq(0)
+                    # m.d.sync += buffer.eq(data >> (octets_consumed << 4))
                     m.d.sync += buffer_v.eq(1)
-                    m.d.sync += buffer_consumed.eq(octets_consumed)
-                    m.d.sync += r_size.eq(octets_consumed >> 1)
-                    m.d.sync += remain.eq((octet_count >> 1) - (octets_consumed >> 1))
+                    m.d.sync += buffer_consumed.eq((octets_consumed << 1))
+                    m.d.sync += r_size.eq(octets_consumed)
+                    m.d.sync += remain.eq((octet_count >> 1) - octets_consumed)
                     m.d.sync += buffer_end_pending_flag.eq(1)
                     m.d.sync += buffer_end_pending.eq(
-                        end_of_packet_len - octets_consumed
+                        end_of_packet_len - (octets_consumed << 1)
                     )
                 with m.Elif(
                     end_of_packet & ~buffer_end_pending_flag & ~self.dout.run & output_v
                 ):
-                    m.d.sync += buffer.eq(data >> (octets_consumed << 3))
+                    for i in range(octet_count // 2):
+                        with m.If(i < octet_count - octets_consumed):
+                            m.d.sync += buffer.word_select(i, 16).eq(
+                                data.word_select(
+                                    (i + octets_consumed).as_unsigned(), 16
+                                )
+                            )
+                        with m.Else():
+                            m.d.sync += buffer.word_select(i, 16).eq(0)
                     m.d.sync += buffer_v.eq(1)
-                    m.d.sync += buffer_consumed.eq(octets_consumed)
-                    m.d.sync += r_size.eq(octets_consumed >> 1)
-                    m.d.sync += remain.eq((octet_count >> 1) - (octets_consumed >> 1))
+                    m.d.sync += buffer_consumed.eq((octets_consumed << 1))
+                    m.d.sync += r_size.eq(octets_consumed)
+                    m.d.sync += remain.eq((octet_count >> 1) - octets_consumed)
                     m.d.sync += buffer_end_pending_flag.eq(1)
                     m.d.sync += buffer_end_pending.eq(
-                        end_of_packet_len - octets_consumed
+                        end_of_packet_len - (octets_consumed << 1)
                     )
                 with m.Elif(
                     end_of_packet
@@ -176,18 +201,34 @@ class ParserAligner(Elaboratable):
                     & ~self.dout.run
                     & ~output_v
                 ):
-                    m.d.sync += output.eq(data >> (octets_consumed << 3))
+                    for i in range(octet_count // 2):
+                        with m.If(i < octet_count - octets_consumed):
+                            m.d.sync += output.word_select(i, 16).eq(
+                                data.word_select(
+                                    (i + octets_consumed).as_unsigned(), 16
+                                )
+                            )
+                        with m.Else():
+                            m.d.sync += output.word_select(i, 16).eq(0)
                     m.d.sync += output_v.eq(1)
                     m.d.sync += output_end_of_packet.eq(
-                        end_of_packet_len - octets_consumed
+                        end_of_packet_len - (octets_consumed << 1)
                     )
                     m.d.sync += output_end_of_packet_flag.eq(1)
                 with m.Else():
-                    m.d.sync += buffer.eq(data >> (octets_consumed << 3))
+                    for i in range(octet_count // 2):
+                        with m.If(i < octet_count - octets_consumed):
+                            m.d.sync += buffer.word_select(i, 16).eq(
+                                data.word_select(
+                                    (i + octets_consumed).as_unsigned(), 16
+                                )
+                            )
+                        with m.Else():
+                            m.d.sync += buffer.word_select(i, 16).eq(0)
                     m.d.sync += buffer_v.eq(1)
-                    m.d.sync += buffer_consumed.eq(octets_consumed)
-                    m.d.sync += r_size.eq(octets_consumed >> 1)
-                    m.d.sync += remain.eq((octet_count >> 1) - (octets_consumed >> 1))
+                    m.d.sync += buffer_consumed.eq((octets_consumed << 1))
+                    m.d.sync += r_size.eq(octets_consumed)
+                    m.d.sync += remain.eq((octet_count >> 1) - octets_consumed)
 
             with m.Else():
                 m.d.sync += buffer_consumed.eq(octet_count)

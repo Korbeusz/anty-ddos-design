@@ -189,15 +189,18 @@ class ParserCMSVol(Elaboratable):
 
         aligner1_out = Signal(layouts.parser_in_layout)
         aligner1_valid = Signal(1, init=0)
+        ip_out = Signal(layouts.parser_out_layout)
+        ip_out_valid = Signal(1, init=0)
         self.ip_trans = Transaction(name="ip_parser")
-        with self.ip_trans.body(m, request=aligner1_valid):
-            ip_out = self._ip_parser.step(m, aligner1_out)
+        with Transaction().body(m, request=ip_out_valid):
             self._aligner2.din(m, ip_out)
+            m.d.sync += ip_out_valid.eq(0)
+        with self.ip_trans.body(m, request=aligner1_valid):
+            m.d.sync += ip_out.eq(self._ip_parser.step(m, aligner1_out))
+            m.d.sync += ip_out_valid.eq(1)
             m.d.sync += aligner1_valid.eq(0)
 
-        with Transaction().body(
-            m, request=(~aligner1_valid) | self._aligner2.din.ready
-        ):
+        with Transaction().body(m):
             al1_out = self._aligner1.dout(m)
             m.d.sync += aligner1_out.eq(
                 Cat(

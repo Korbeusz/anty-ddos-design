@@ -218,7 +218,7 @@ class TestEthernetParser(TestCaseWithSimulator):
         self.expected_step_outputs = [
             # 1. non_vlan_in_1
             {
-                "octets_consumed": 14,
+                "octets_consumed": 7,
                 "extract_range_end": 1,
                 "next_proto": EthernetParser.ProtoOut.IPV4,
                 "end_of_packet_len": 64,
@@ -227,7 +227,7 @@ class TestEthernetParser(TestCaseWithSimulator):
             },
             # 2. vlan_in_2
             {
-                "octets_consumed": 18,
+                "octets_consumed": 9,
                 "extract_range_end": 1,
                 "next_proto": EthernetParser.ProtoOut.IPV6,
                 "end_of_packet_len": 64,
@@ -236,7 +236,7 @@ class TestEthernetParser(TestCaseWithSimulator):
             },
             # 3. multi_non_vlan_in_3_chunk1
             {
-                "octets_consumed": 14,
+                "octets_consumed": 7,
                 "extract_range_end": 1,
                 "next_proto": EthernetParser.ProtoOut.IPV4,
                 "end_of_packet_len": 0,
@@ -252,7 +252,7 @@ class TestEthernetParser(TestCaseWithSimulator):
             },
             # 5. multi_vlan_in_4_chunk1
             {
-                "octets_consumed": 18,
+                "octets_consumed": 9,
                 "extract_range_end": 1,
                 "next_proto": EthernetParser.ProtoOut.IPV6,
                 "end_of_packet_len": 0,
@@ -268,7 +268,7 @@ class TestEthernetParser(TestCaseWithSimulator):
             },
             # 7. short_in_5
             {
-                "octets_consumed": 14,
+                "octets_consumed": 7,
                 "extract_range_end": 1,
                 "next_proto": EthernetParser.ProtoOut.UNKNOWN,
                 "end_of_packet_len": 12,
@@ -277,7 +277,7 @@ class TestEthernetParser(TestCaseWithSimulator):
             },
             # 8. short_in_6
             {
-                "octets_consumed": 18,
+                "octets_consumed": 9,
                 "extract_range_end": 1,
                 "next_proto": EthernetParser.ProtoOut.UNKNOWN,
                 "end_of_packet_len": 16,
