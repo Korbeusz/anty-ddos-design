@@ -2,10 +2,10 @@ from amaranth import *
 from transactron import *
 
 from mur.count.CountMinSketch import CountMinSketch
-from transactron.lib import logging
+#from transactron.lib import logging
 
 __all__ = ["RollingCountMinSketch"]
-log = logging.HardwareLogger("rollingcountminsketch")
+#log = logging.HardwareLogger("rollingcountminsketch")
 
 
 class RollingCountMinSketch(Elaboratable):

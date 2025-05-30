@@ -41,7 +41,7 @@ class ParserCMSVolModule(Component):
 
         m.submodules.core = core = ParserCMSVol(
             depth=4,
-            width=16_384,
+            width=2**10,
             counter_width=32,
             window=int(1 / CYCLE_TIME),
             volume_threshold=100_000,
