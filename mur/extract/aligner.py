@@ -52,8 +52,19 @@ class ParserAligner(Elaboratable):
         octet_count = self.params.word_bits // octet_bits  # Number of octets in a word
         buffer_v = Signal()
 
-        state_int = [Signal(self.layouts.parser_out_layout) for _ in range(2**4)]
-        state_int_v = [Signal() for _ in range(2**4)]
+        pipeline_length = 2**5 + 1  # Number of pipeline stages
+        state_int = [
+            Signal(self.layouts.parser_out_layout) for _ in range(pipeline_length)
+        ]
+        state_int_v = [Signal() for _ in range(pipeline_length)]
+        half_octet_consumed = [
+            Signal(range(self.params.word_bits // 16 + 1))
+            for _ in range(pipeline_length)
+        ]
+        reminder_octet_consumed = [
+            Signal(range(self.params.word_bits // 16 + 1))
+            for _ in range(pipeline_length)
+        ]
 
         @def_method(m, self.dout, ready=output_v)
         def _():
@@ -229,9 +240,14 @@ class ParserAligner(Elaboratable):
 
         for i in range(len(state_int)):
             if i != 0:
-                m.d.sync += state_int[i].data.eq(
-                    state_int[i - 1].data >> state_int[i - 1].octets_consumed
-                )
+                if i % 2:
+                    m.d.sync += state_int[i].data.eq(
+                        state_int[i - 1].data >> half_octet_consumed[i - 1]
+                    )
+                else:
+                    m.d.sync += state_int[i].data.eq(
+                        state_int[i - 1].data >> (reminder_octet_consumed[i - 1])
+                    )
                 m.d.sync += state_int[i].octets_consumed.eq(
                     state_int[i - 1].octets_consumed
                 )
@@ -248,9 +264,15 @@ class ParserAligner(Elaboratable):
                 m.d.sync += state_int[i].error_drop.eq(state_int[i - 1].error_drop)
 
                 m.d.sync += state_int_v[i].eq(state_int_v[i - 1])
+                m.d.sync += half_octet_consumed[i].eq(half_octet_consumed[i - 1])
+                m.d.sync += reminder_octet_consumed[i].eq(
+                    reminder_octet_consumed[i - 1]
+                )
             else:
                 m.d.sync += state_int[i].eq(0)
                 m.d.sync += state_int_v[i].eq(0)
+                m.d.sync += half_octet_consumed[i].eq(0)
+                m.d.sync += reminder_octet_consumed[i].eq(0)
 
         @def_method(m, self.din)
         def _(
@@ -262,10 +284,11 @@ class ParserAligner(Elaboratable):
             end_of_packet_len,
             error_drop,
         ):
-            with m.If(extract_range_end):
-                m.d.sync += state_int[0].data.eq(data >> octets_consumed)
-            with m.Else():
-                m.d.sync += state_int[0].data.eq(data)
+            m.d.sync += half_octet_consumed[0].eq(octets_consumed >> 1)
+            m.d.sync += reminder_octet_consumed[0].eq(
+                (octets_consumed >> 1) + (octets_consumed & 1)
+            )
+            m.d.sync += state_int[0].data.eq(data)
             m.d.sync += state_int[0].octets_consumed.eq(octets_consumed)
             m.d.sync += state_int[0].extract_range_end.eq(extract_range_end)
             m.d.sync += state_int[0].next_proto.eq(next_proto)

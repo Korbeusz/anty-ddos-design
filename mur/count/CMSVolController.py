@@ -7,6 +7,9 @@ from transactron.lib.simultaneous import condition
 from mur.count.RollingCountMinSketch import RollingCountMinSketch
 from mur.count.VolCounter import VolCounter
 
+#from transactron.lib import logging
+
+#log = logging.HardwareLogger("cmsvolcontroller")
 __all__ = ["CMSVolController"]
 
 
@@ -157,17 +160,23 @@ class CMSVolController(Elaboratable):
         self._query_decision = Signal(32)
         self._out = Signal(5)
         self._out_valid = Signal(1)
-        q1_data = Signal(32)
-        q2_data = Signal(32)
-        q3_data = Signal(32)
+        # for now design is simplified it should be sum calculated in pipeline
+        q1_data = Signal()
+        q2_data = Signal()
+        q3_data = Signal()
         q_valid = Signal(1)
         m.d.sync += self._out_valid.eq(0)
         with Transaction().body(m):
             q = self.rcms_sipdip.output(m)
-            m.d.sync += q1_data.eq(q["count"])
-            m.d.sync += q2_data.eq(self.rcms_dportdip.output(m)["count"])
-            m.d.sync += q3_data.eq(self.rcms_siplen.output(m)["count"])
+            m.d.sync += q1_data.eq((q["count"] > self.discover_threshold))
+            m.d.sync += q2_data.eq(
+                self.rcms_dportdip.output(m)["count"] > self.discover_threshold
+            )
+            m.d.sync += q3_data.eq(
+                self.rcms_siplen.output(m)["count"] > self.discover_threshold
+            )
             m.d.sync += q_valid.eq(q["valid"])
+            #log.debug(m, q["valid"], "{:x}", q1_data | q2_data | q3_data)
 
         with m.If(self._all_query_received & self._inserts_difference):
             m.d.sync += self._out.eq(self._inserts_difference)
@@ -176,14 +185,9 @@ class CMSVolController(Elaboratable):
         with m.If(~self._all_query_received & q_valid):
             m.d.sync += self._out_valid.eq(1)
             m.d.sync += self._query_received.eq(self._query_received + 1)
-            m.d.sync += self._out.eq(
-                Mux(
-                    q1_data + q2_data + q3_data > self.discover_threshold,
-                    1,
-                    0,
-                )
-            )
+            m.d.sync += self._out.eq(q1_data | q2_data | q3_data)
         with Transaction().body(m, request=self._out_valid):
+
             self._fifo_out.write(m, {"data": self._out})
 
         return m

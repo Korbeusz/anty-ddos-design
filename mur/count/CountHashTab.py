@@ -4,6 +4,9 @@ from transactron import *
 from amaranth.lib.memory import Memory as memory
 from mur.count.hash import Hash
 
+# from transactron.lib import logging
+
+# log = logging.HardwareLogger("counthashtab")
 __all__ = ["CountHashTab"]
 
 
@@ -77,9 +80,9 @@ class CountHashTab(Elaboratable):
         clr_addr = Signal(range(self.size))
         clr_waiting = Signal(range(64))
 
+        m.d.comb += rd.en.eq(1)
         m.d.sync += [
             wr.en.eq(0),
-            rd.en.eq(0),
         ]
         m.d.sync += [
             req_start.eq(0),
@@ -93,20 +96,29 @@ class CountHashTab(Elaboratable):
         with Transaction().body(m):
             res = self.query_hash.result(m)
             with m.If(res["valid"]):
-                m.d.sync += [rd.en.eq(1), rd.addr.eq(res["hash"]), req_start.eq(1)]
+                m.d.sync += [rd.addr.eq(res["hash"]), req_start.eq(1)]
 
-        increment_addr = Signal(range(self.size))
-        with m.If(req_start):
-            m.d.sync += increment_addr.eq(rd.addr)
-
-        with m.If(req_save):
-            m.d.sync += req_read_value.eq(rd.data)
-
+        # increment_addr = Signal(range(self.size))
+        # with m.If(req_start):
+        #    m.d.sync += increment_addr.eq(rd.addr)
+        req_read_value2 = Signal(self.counter_width)
+        #
+        # with m.If(req_start):
+        #with m.If(req_save):
+        m.d.sync += req_read_value.eq(rd.data)
+        # with m.If(req_save):
+        #    m.d.sync += req_read_value2.eq(rd.data)
+        # log.debug(
+        #     m,
+        #     req_ready,
+        #     "{:x} -> {:x}",
+        #     req_read_value,
+        #     req_read_value2,
+        # )
         with Transaction().body(m):
             res = self.insert_hash.result(m)
             with m.If(res["valid"]):
                 m.d.sync += [
-                    rd.en.eq(1),
                     rd.addr.eq(res["hash"]),
                     inc_start.eq(1),
                 ]
@@ -116,15 +128,15 @@ class CountHashTab(Elaboratable):
 
         write_addr2 = Signal(range(self.size))
         write_data = Signal(self.counter_width)
-        with m.If(insert_incrementing):
-            # with m.If(insert_writing & (wr.addr == write_addr)):
-            #     m.d.sync += [
-            #         wr.en.eq(1),
-            #         wr.addr.eq(write_addr),
-            #         wr.data.eq(wr.data + 1),
-            #     ]
-            # with m.Else():
-            m.d.sync += [write_data.eq(rd.data), write_addr2.eq(write_addr)]
+        # with m.If(insert_incrementing):
+        # with m.If(insert_writing & (wr.addr == write_addr)):
+        #     m.d.sync += [
+        #         wr.en.eq(1),
+        #         wr.addr.eq(write_addr),
+        #         wr.data.eq(wr.data + 1),
+        #     ]
+        # with m.Else():
+        m.d.sync += [write_data.eq(rd.data), write_addr2.eq(write_addr)]
 
         with m.If(insert_writing):
             m.d.sync += wr.data.eq(write_data + 1)

@@ -2,8 +2,10 @@ from amaranth import *
 from transactron import *
 
 from mur.count.CountMinSketch import CountMinSketch
+from transactron.lib import logging
 
 __all__ = ["RollingCountMinSketch"]
+log = logging.HardwareLogger("rollingcountminsketch")
 
 
 class RollingCountMinSketch(Elaboratable):
@@ -110,20 +112,20 @@ class RollingCountMinSketch(Elaboratable):
             r1 = self._cms1.query_resp(m)
             r2 = self._cms2.query_resp(m)
 
-            valid = Signal(1)
-            count = Signal(self.counter_width)
-
-            m.d.comb += [
-                valid.eq(r0["valid"] | r1["valid"] | r2["valid"]),
-                count.eq(
-                    Mux(
-                        r0["valid"],
-                        r0["count"],
-                        Mux(r1["valid"], r1["count"], r2["count"]),
-                    )
+            count = Mux(
+                r0["valid"],
+                r0["count"],
+                Mux(
+                    r1["valid"],
+                    r1["count"],
+                    Mux(r2["valid"], r2["count"], 0),
                 ),
-            ]
-            return {"count": count, "valid": valid}
+            )
+
+            return {
+                "count": count,
+                "valid": r0["valid"] | r1["valid"] | r2["valid"],
+            }
 
         @def_method(m, self.change_roles)
         def _():

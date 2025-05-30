@@ -3,7 +3,9 @@ from transactron import *
 from amaranth.utils import ceil_log2
 
 from mur.count.CountHashTab import CountHashTab
+#from transactron.lib import logging
 
+#log = logging.HardwareLogger("countminsketch")
 __all__ = ["CountMinSketch"]
 
 
@@ -92,6 +94,8 @@ class CountMinSketch(Elaboratable):
                     min_tree[2 * i + 1],
                 )
             )
+        # log the whole tree and valid singals
+
         with Transaction().body(m):
             row_results = [row.query_resp(m) for row in self.rows]
             count_signals = [r["count"] for r in row_results]
@@ -101,6 +105,7 @@ class CountMinSketch(Elaboratable):
 
         @def_method(m, self.query_resp)
         def _():
+            #log.debug(m,valid_depth[0], "{:x}", min_tree[1])
             return {"count": min_tree[1], "valid": valid_depth[0]}
 
         @def_method(m, self.query_req)
