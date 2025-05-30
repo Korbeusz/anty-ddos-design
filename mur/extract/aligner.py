@@ -65,6 +65,7 @@ class ParserAligner(Elaboratable):
             Signal(range(self.params.word_bits // 16 + 1))
             for _ in range(pipeline_length)
         ]
+        shifted_data = [Signal(self.params.word_bits) for _ in range(pipeline_length)]
 
         @def_method(m, self.dout, ready=output_v)
         def _():
@@ -128,9 +129,7 @@ class ParserAligner(Elaboratable):
                         m.d.sync += output_end_of_packet_flag.eq(1)
                         m.d.sync += buffer_v.eq(0)
                     with m.Else():
-                        m.d.sync += buffer.eq(
-                            state_int[len(state_int) - 1].data >> (r_size << 4)
-                        )
+                        m.d.sync += buffer.eq(shifted_data[len(shifted_data) - 1])
                         m.d.sync += buffer_v.eq(1)
                         m.d.sync += buffer_end_pending_flag.eq(1)
                         m.d.sync += buffer_end_pending.eq(
@@ -138,9 +137,7 @@ class ParserAligner(Elaboratable):
                             - buffer_consumed
                         )
                 with m.Else():
-                    m.d.sync += buffer.eq(
-                        state_int[len(state_int) - 1].data >> (r_size << 4)
-                    )
+                    m.d.sync += buffer.eq(shifted_data[len(shifted_data) - 1])
                     with m.If(output_v):
                         m.d.sync += buffer_v.eq(1)
 
@@ -159,7 +156,7 @@ class ParserAligner(Elaboratable):
                     & ~buffer_end_pending_flag
                     & self.dout.run
                 ):
-                    m.d.sync += output.eq(state_int[len(state_int) - 1].data)
+                    m.d.sync += output.eq(shifted_data[len(shifted_data) - 1])
                     m.d.sync += output_v.eq(1)
                     m.d.sync += output_end_of_packet.eq(
                         state_int[len(state_int) - 1].end_of_packet_len
@@ -172,7 +169,7 @@ class ParserAligner(Elaboratable):
                     & buffer_end_pending_flag
                     & self.dout.run
                 ):
-                    m.d.sync += buffer.eq(state_int[len(state_int) - 1].data)
+                    m.d.sync += buffer.eq(shifted_data[len(shifted_data) - 1])
                     m.d.sync += buffer_v.eq(1)
                     m.d.sync += buffer_consumed.eq(
                         (state_int[len(state_int) - 1].octets_consumed << 1)
@@ -193,7 +190,7 @@ class ParserAligner(Elaboratable):
                     & ~self.dout.run
                     & output_v
                 ):
-                    m.d.sync += buffer.eq(state_int[len(state_int) - 1].data)
+                    m.d.sync += buffer.eq(shifted_data[len(shifted_data) - 1])
                     m.d.sync += buffer_v.eq(1)
                     m.d.sync += buffer_consumed.eq(
                         (state_int[len(state_int) - 1].octets_consumed << 1)
@@ -214,7 +211,7 @@ class ParserAligner(Elaboratable):
                     & ~self.dout.run
                     & ~output_v
                 ):
-                    m.d.sync += output.eq(state_int[len(state_int) - 1].data)
+                    m.d.sync += output.eq(shifted_data[len(shifted_data) - 1])
                     m.d.sync += output_v.eq(1)
                     m.d.sync += output_end_of_packet.eq(
                         state_int[len(state_int) - 1].end_of_packet_len
@@ -222,7 +219,7 @@ class ParserAligner(Elaboratable):
                     )
                     m.d.sync += output_end_of_packet_flag.eq(1)
                 with m.Else():
-                    m.d.sync += buffer.eq(state_int[len(state_int) - 1].data)
+                    m.d.sync += buffer.eq(shifted_data[len(shifted_data) - 1])
                     m.d.sync += buffer_v.eq(1)
                     m.d.sync += buffer_consumed.eq(
                         (state_int[len(state_int) - 1].octets_consumed << 1)
@@ -241,12 +238,12 @@ class ParserAligner(Elaboratable):
         for i in range(len(state_int)):
             if i != 0:
                 if i % 2:
-                    m.d.sync += state_int[i].data.eq(
-                        state_int[i - 1].data >> half_octet_consumed[i - 1]
+                    m.d.sync += shifted_data[i].eq(
+                        shifted_data[i - 1] >> half_octet_consumed[i - 1]
                     )
                 else:
-                    m.d.sync += state_int[i].data.eq(
-                        state_int[i - 1].data >> (reminder_octet_consumed[i - 1])
+                    m.d.sync += shifted_data[i].eq(
+                        shifted_data[i - 1] >> (reminder_octet_consumed[i - 1])
                     )
                 m.d.sync += state_int[i].octets_consumed.eq(
                     state_int[i - 1].octets_consumed
@@ -268,11 +265,13 @@ class ParserAligner(Elaboratable):
                 m.d.sync += reminder_octet_consumed[i].eq(
                     reminder_octet_consumed[i - 1]
                 )
+                m.d.sync += state_int[i].data.eq(state_int[i - 1].data)
             else:
                 m.d.sync += state_int[i].eq(0)
                 m.d.sync += state_int_v[i].eq(0)
-                m.d.sync += half_octet_consumed[i].eq(0)
-                m.d.sync += reminder_octet_consumed[i].eq(0)
+                # m.d.sync += half_octet_consumed[i].eq(0)
+                # m.d.sync += reminder_octet_consumed[i].eq(0)
+                m.d.sync += shifted_data[i].eq(0)
 
         @def_method(m, self.din)
         def _(
@@ -284,10 +283,12 @@ class ParserAligner(Elaboratable):
             end_of_packet_len,
             error_drop,
         ):
-            m.d.sync += half_octet_consumed[0].eq(octets_consumed >> 1)
-            m.d.sync += reminder_octet_consumed[0].eq(
-                (octets_consumed >> 1) + (octets_consumed & 1)
-            )
+            m.d.sync += shifted_data[0].eq(data)
+            with m.If(extract_range_end):
+                m.d.sync += half_octet_consumed[0].eq(octets_consumed >> 1)
+                m.d.sync += reminder_octet_consumed[0].eq(
+                    (octets_consumed >> 1) + (octets_consumed & 1)
+                )
             m.d.sync += state_int[0].data.eq(data)
             m.d.sync += state_int[0].octets_consumed.eq(octets_consumed)
             m.d.sync += state_int[0].extract_range_end.eq(extract_range_end)
