@@ -19,7 +19,7 @@ class TestAligner(TestCaseWithSimulator):
         self.octets_in_word = self.params.word_bits // 8
 
         self.packets = [
-            [randint(0x0, 0xFF) for _ in range(randint(4, self.octets_in_word * 3))]
+            [randint(0x0, 0xFF) for _ in range(randint(8, self.octets_in_word * 3))]
             for _ in range(self.packets)
         ]
 
@@ -43,12 +43,12 @@ class TestAligner(TestCaseWithSimulator):
                 0, max(0, (len(p) // self.octets_in_word) - 1)
             )
             partial_consumed_length_octets = (
-                2
-                if len(p) < 3
+                4
+                if len(p) < 5
                 else randint(
-                    2,
+                    4,
                     min(
-                        self.octets_in_word // 2 - 2,
+                        self.octets_in_word // 2 - 4,
                         (len(p) - fully_consumed_words * self.octets_in_word) // 2,
                     ),
                 )

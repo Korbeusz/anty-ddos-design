@@ -52,25 +52,26 @@ class ParserAligner(Elaboratable):
         octet_count = self.params.word_bits // octet_bits  # Number of octets in a word
         buffer_v = Signal()
 
-        pipeline_length = 2**5 + 1  # Number of pipeline stages
+        pipeline_length = 2**6 + 1  # Number of pipeline stages
         state_int = [
             Signal(self.layouts.parser_out_layout) for _ in range(pipeline_length)
         ]
         state_int_v = [Signal() for _ in range(pipeline_length)]
         half_octet_consumed = [
-            Signal(range(self.params.word_bits // 32)) for _ in range(pipeline_length)
+            Signal(range(self.params.word_bits // 64)) for _ in range(pipeline_length)
         ]
         reminder_octet_consumed = [
-            Signal(range(self.params.word_bits // 32)) for _ in range(pipeline_length)
+            Signal(range(self.params.word_bits // 64)) for _ in range(pipeline_length)
         ]
         shifted_data = [Signal(self.params.word_bits) for _ in range(pipeline_length)]
         remain_shift = [
-            Signal(range(self.params.word_bits // 32)) for _ in range(pipeline_length)
+            Signal(range(self.params.word_bits // 64)) for _ in range(pipeline_length)
         ]
         reminder_ramain_shift = [
-            Signal(range(self.params.word_bits // 32))
-            for _ in range(pipeline_length)
+            Signal(range(self.params.word_bits // 64)) for _ in range(pipeline_length)
         ]
+        low_bits_octet_consumed = [Signal(range(3)) for _ in range(pipeline_length)]
+        low_bits_octet_consumed2 = [Signal(range(3)) for _ in range(pipeline_length)]
         # remain_data = [Signal(self.params.word_bits) for _ in range(pipeline_length)]
 
         @def_method(m, self.dout, ready=output_v)
@@ -235,21 +236,48 @@ class ParserAligner(Elaboratable):
 
         for i in range(len(state_int)):
             if i != 0:
-                if i % 2:
+                if i % 4 == 0:
                     m.d.sync += shifted_data[i].eq(
                         shifted_data[i - 1] >> half_octet_consumed[i - 1]
                     )
                     m.d.sync += state_int[i].data.eq(
                         state_int[i - 1].data << remain_shift[i - 1]
                     )
-                else:
-                    m.d.sync += shifted_data[i].eq(
-                        shifted_data[i - 1] >> (reminder_octet_consumed[i - 1])
-                    )
-                    m.d.sync += state_int[i].data.eq(
-                        state_int[i - 1].data << reminder_ramain_shift[i - 1]
-                    )
+                elif i % 4 == 1:
+                    with m.If(low_bits_octet_consumed[i - 1] & 1):
+                        m.d.sync += shifted_data[i].eq(
+                            shifted_data[i - 1] >> (reminder_octet_consumed[i - 1])
+                        )
 
+                    with m.Else():
+                        m.d.sync += shifted_data[i].eq(
+                            shifted_data[i - 1] >> half_octet_consumed[i - 1]
+                        )
+                    with m.If(low_bits_octet_consumed2[i - 1] & 1):
+                        m.d.sync += state_int[i].data.eq(
+                            state_int[i - 1].data << reminder_ramain_shift[i - 1]
+                        )
+                    with m.Else():
+                        m.d.sync += state_int[i].data.eq(
+                            state_int[i - 1].data << remain_shift[i - 1]
+                        )
+                else:
+                    with m.If(low_bits_octet_consumed[i - 1] & 2 == 2):
+                        m.d.sync += shifted_data[i].eq(
+                            shifted_data[i - 1] >> (reminder_octet_consumed[i - 1])
+                        )
+                    with m.Else():
+                        m.d.sync += shifted_data[i].eq(
+                            shifted_data[i - 1] >> half_octet_consumed[i - 1]
+                        )
+                    with m.If(low_bits_octet_consumed2[i - 1] & 2 == 2):
+                        m.d.sync += state_int[i].data.eq(
+                            state_int[i - 1].data << reminder_ramain_shift[i - 1]
+                        )
+                    with m.Else():
+                        m.d.sync += state_int[i].data.eq(
+                            state_int[i - 1].data << remain_shift[i - 1]
+                        )
                 m.d.sync += state_int[i].octets_consumed.eq(
                     state_int[i - 1].octets_consumed
                 )
@@ -273,6 +301,12 @@ class ParserAligner(Elaboratable):
                 # m.d.sync += state_int[i].data.eq(state_int[i - 1].data)
                 m.d.sync += remain_shift[i].eq(remain_shift[i - 1])
                 m.d.sync += reminder_ramain_shift[i].eq(reminder_ramain_shift[i - 1])
+                m.d.sync += low_bits_octet_consumed[i].eq(
+                    low_bits_octet_consumed[i - 1]
+                )
+                m.d.sync += low_bits_octet_consumed2[i].eq(
+                    low_bits_octet_consumed2[i - 1]
+                )
             else:
                 m.d.sync += state_int[i].eq(0)
                 m.d.sync += state_int_v[i].eq(0)
@@ -293,16 +327,17 @@ class ParserAligner(Elaboratable):
             m.d.sync += shifted_data[0].eq(data)
             # m.d.sync += remain_data[0].eq(data)
             with m.If(extract_range_end):
-                m.d.sync += half_octet_consumed[0].eq(octets_consumed >> 1)
-                m.d.sync += reminder_octet_consumed[0].eq(
-                    (octets_consumed >> 1) + (octets_consumed & 1)
-                )
+                m.d.sync += half_octet_consumed[0].eq(octets_consumed >> 2)
+                m.d.sync += reminder_octet_consumed[0].eq((octets_consumed >> 2) + 1)
                 m.d.sync += remain_shift[0].eq(
-                    ((octet_count >> 1) - octets_consumed) >> 1
+                    ((octet_count >> 1) - octets_consumed) >> 2
                 )
                 m.d.sync += reminder_ramain_shift[0].eq(
-                    (((octet_count >> 1) - octets_consumed) >> 1)
-                    + (((octet_count >> 1) - octets_consumed) & 1)
+                    (((octet_count >> 1) - octets_consumed) >> 2) + 1
+                )
+                m.d.sync += low_bits_octet_consumed[0].eq(octets_consumed & 3)
+                m.d.sync += low_bits_octet_consumed2[0].eq(
+                    ((octet_count >> 1) - octets_consumed) & 3
                 )
             m.d.sync += state_int[0].data.eq(data)
             m.d.sync += state_int[0].octets_consumed.eq(octets_consumed)
