@@ -232,32 +232,50 @@ class ParserCMSVol(Elaboratable):
         # FILTERING
         decision = Signal(5, init=0)
         decision_valid = Signal(1, init=0)
+        next_decision_valid = Signal(1, init=0)
+        
+        output_filtered = Signal(layouts.parser_in_layout)
+        output_filtered_valid = Signal(1, init=0)
+        m.d.comb += next_decision_valid.eq(1)
+        with Transaction().body(
+            m, request=output_filtered_valid & (decision_valid & (decision > 0))
+        ):
+            self._fifo_output_filtered.write(m, output_filtered)
+            m.d.sync += output_filtered_valid.eq(0)
 
-        with Transaction().body(m, request=~decision_valid):
-            m.d.sync += decision.eq(self._cms.out(m)["data"])
-            m.d.sync += decision_valid.eq(1)
-
+        with m.If(output_filtered["end_of_packet"] & output_filtered_valid & (decision_valid & (decision > 0))):
+            m.d.sync += decision.eq(decision - 1)
+            with m.If(decision == 1):
+                m.d.sync += decision_valid.eq(0)
+                m.d.comb += next_decision_valid.eq(0)
+            m.d.sync += self._number_of_full_packets_processed.eq(
+                self._number_of_full_packets_processed + 1
+            )
         with Transaction().body(
             m,
-            request=(decision_valid & (decision > 0)),
+            request=~output_filtered_valid
+            | (
+                decision_valid & (decision > 0) & self._fifo_output_filtered.write.ready
+            ),
         ):
-            tmp = self._fifo_output_unfiltered.read(m)
-            self._fifo_output_filtered.write(m, tmp)
-            with m.If(tmp["end_of_packet"]):
-                m.d.sync += decision.eq(decision - 1)
-                with m.If(decision == 1):
-                    m.d.sync += decision_valid.eq(0)
-                m.d.sync += self._number_of_full_packets_processed.eq(
-                    self._number_of_full_packets_processed + 1
-                )
+            m.d.sync += output_filtered.eq(self._fifo_output_unfiltered.read(m))
+            m.d.sync += output_filtered_valid.eq(1)
 
+        with m.If(decision_valid & (decision == 0) & output_filtered_valid):
+                m.d.sync += output_filtered_valid.eq(0)
+                with m.If(output_filtered["end_of_packet"]):
+                    m.d.sync += decision_valid.eq(0)
+                    m.d.comb += next_decision_valid.eq(0)
         with Transaction().body(
             m,
             request=decision_valid & (decision == 0),
         ):
-            tmp = self._fifo_output_unfiltered.read(m)
-            with m.If(tmp["end_of_packet"]):
-                m.d.sync += decision_valid.eq(0)
+            m.d.sync += output_filtered.eq(self._fifo_output_unfiltered.read(m))
+            m.d.sync += output_filtered_valid.eq(1)
+
+        with Transaction().body(m, request=~decision_valid |  ~next_decision_valid):
+            m.d.sync += decision.eq(self._cms.out(m)["data"])
+            m.d.sync += decision_valid.eq(1)
 
         full_packet_in_filtered_queue = Signal(1, init=0)
         m.d.comb += full_packet_in_filtered_queue.eq(
