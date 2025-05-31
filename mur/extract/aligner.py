@@ -58,23 +58,20 @@ class ParserAligner(Elaboratable):
         ]
         state_int_v = [Signal() for _ in range(pipeline_length)]
         half_octet_consumed = [
-            Signal(range(self.params.word_bits // 16 + 1))
-            for _ in range(pipeline_length)
+            Signal(range(self.params.word_bits // 32)) for _ in range(pipeline_length)
         ]
         reminder_octet_consumed = [
-            Signal(range(self.params.word_bits // 16 + 1))
-            for _ in range(pipeline_length)
+            Signal(range(self.params.word_bits // 32)) for _ in range(pipeline_length)
         ]
         shifted_data = [Signal(self.params.word_bits) for _ in range(pipeline_length)]
         remain_shift = [
-            Signal(range(self.params.word_bits // 16 + 1))
-            for _ in range(pipeline_length)
+            Signal(range(self.params.word_bits // 32)) for _ in range(pipeline_length)
         ]
         reminder_ramain_shift = [
-            Signal(range(self.params.word_bits // 16 + 1))
+            Signal(range(self.params.word_bits // 32))
             for _ in range(pipeline_length)
         ]
-        remain_data = [Signal(self.params.word_bits) for _ in range(pipeline_length)]
+        # remain_data = [Signal(self.params.word_bits) for _ in range(pipeline_length)]
 
         @def_method(m, self.dout, ready=output_v)
         def _():
@@ -114,7 +111,7 @@ class ParserAligner(Elaboratable):
                 # m.d.sync += output.eq(
                 #    buffer | (state_int[len(state_int) - 1].data << (remain << 4))
                 # )
-                m.d.sync += output.eq(buffer | (remain_data[len(remain_data) - 1]))
+                m.d.sync += output.eq(buffer | (state_int[len(state_int) - 1].data))
                 m.d.sync += output_v.eq(1)
 
                 with m.If(state_int[len(state_int) - 1].end_of_packet):
@@ -242,15 +239,15 @@ class ParserAligner(Elaboratable):
                     m.d.sync += shifted_data[i].eq(
                         shifted_data[i - 1] >> half_octet_consumed[i - 1]
                     )
-                    m.d.sync += remain_data[i].eq(
-                        remain_data[i - 1] << remain_shift[i - 1]
+                    m.d.sync += state_int[i].data.eq(
+                        state_int[i - 1].data << remain_shift[i - 1]
                     )
                 else:
                     m.d.sync += shifted_data[i].eq(
                         shifted_data[i - 1] >> (reminder_octet_consumed[i - 1])
                     )
-                    m.d.sync += remain_data[i].eq(
-                        remain_data[i - 1] << reminder_ramain_shift[i - 1]
+                    m.d.sync += state_int[i].data.eq(
+                        state_int[i - 1].data << reminder_ramain_shift[i - 1]
                     )
 
                 m.d.sync += state_int[i].octets_consumed.eq(
@@ -273,7 +270,7 @@ class ParserAligner(Elaboratable):
                 m.d.sync += reminder_octet_consumed[i].eq(
                     reminder_octet_consumed[i - 1]
                 )
-                m.d.sync += state_int[i].data.eq(state_int[i - 1].data)
+                # m.d.sync += state_int[i].data.eq(state_int[i - 1].data)
                 m.d.sync += remain_shift[i].eq(remain_shift[i - 1])
                 m.d.sync += reminder_ramain_shift[i].eq(reminder_ramain_shift[i - 1])
             else:
@@ -282,7 +279,6 @@ class ParserAligner(Elaboratable):
                 # m.d.sync += half_octet_consumed[i].eq(0)
                 # m.d.sync += reminder_octet_consumed[i].eq(0)
                 m.d.sync += shifted_data[i].eq(0)
-                m.d.sync += remain_data[i].eq(0)
 
         @def_method(m, self.din)
         def _(
@@ -295,7 +291,7 @@ class ParserAligner(Elaboratable):
             error_drop,
         ):
             m.d.sync += shifted_data[0].eq(data)
-            m.d.sync += remain_data[0].eq(data)
+            # m.d.sync += remain_data[0].eq(data)
             with m.If(extract_range_end):
                 m.d.sync += half_octet_consumed[0].eq(octets_consumed >> 1)
                 m.d.sync += reminder_octet_consumed[0].eq(

@@ -53,7 +53,7 @@ class ProtoParserLayouts:
 
         self.octets_consumed = (
             "octets_consumed",
-            range((Params().word_bits // 16) + 1),
+            range((Params().word_bits // 16)),
         )
         """ How many octets were parsed and consumed"""
 
