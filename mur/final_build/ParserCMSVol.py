@@ -233,17 +233,22 @@ class ParserCMSVol(Elaboratable):
         decision = Signal(5, init=0)
         decision_valid = Signal(1, init=0)
         next_decision_valid = Signal(1, init=0)
-        
+        new_full_packet_in_filtered_queue = Signal(1, init=0)
         output_filtered = Signal(layouts.parser_in_layout)
         output_filtered_valid = Signal(1, init=0)
         m.d.comb += next_decision_valid.eq(1)
+        m.d.sync += new_full_packet_in_filtered_queue.eq(0)
         with Transaction().body(
             m, request=output_filtered_valid & (decision_valid & (decision > 0))
         ):
             self._fifo_output_filtered.write(m, output_filtered)
             m.d.sync += output_filtered_valid.eq(0)
 
-        with m.If(output_filtered["end_of_packet"] & output_filtered_valid & (decision_valid & (decision > 0))):
+        with m.If(
+            output_filtered["end_of_packet"]
+            & output_filtered_valid
+            & (decision_valid & (decision > 0))
+        ):
             m.d.sync += decision.eq(decision - 1)
             with m.If(decision == 1):
                 m.d.sync += decision_valid.eq(0)
@@ -251,21 +256,19 @@ class ParserCMSVol(Elaboratable):
             m.d.sync += self._number_of_full_packets_processed.eq(
                 self._number_of_full_packets_processed + 1
             )
+            m.d.sync += new_full_packet_in_filtered_queue.eq(1)
         with Transaction().body(
             m,
-            request=~output_filtered_valid
-            | (
-                decision_valid & (decision > 0) & self._fifo_output_filtered.write.ready
-            ),
+            request=~output_filtered_valid | (decision_valid & (decision > 0)),
         ):
             m.d.sync += output_filtered.eq(self._fifo_output_unfiltered.read(m))
             m.d.sync += output_filtered_valid.eq(1)
 
         with m.If(decision_valid & (decision == 0) & output_filtered_valid):
-                m.d.sync += output_filtered_valid.eq(0)
-                with m.If(output_filtered["end_of_packet"]):
-                    m.d.sync += decision_valid.eq(0)
-                    m.d.comb += next_decision_valid.eq(0)
+            m.d.sync += output_filtered_valid.eq(0)
+            with m.If(output_filtered["end_of_packet"]):
+                m.d.sync += decision_valid.eq(0)
+                m.d.comb += next_decision_valid.eq(0)
         with Transaction().body(
             m,
             request=decision_valid & (decision == 0),
@@ -273,23 +276,41 @@ class ParserCMSVol(Elaboratable):
             m.d.sync += output_filtered.eq(self._fifo_output_unfiltered.read(m))
             m.d.sync += output_filtered_valid.eq(1)
 
-        with Transaction().body(m, request=~decision_valid |  ~next_decision_valid):
+        with Transaction().body(m, request=~decision_valid | ~next_decision_valid):
             m.d.sync += decision.eq(self._cms.out(m)["data"])
             m.d.sync += decision_valid.eq(1)
 
         full_packet_in_filtered_queue = Signal(1, init=0)
-        m.d.comb += full_packet_in_filtered_queue.eq(
+        m.d.sync += full_packet_in_filtered_queue.eq(
             self._number_of_full_packets_outputted
             != self._number_of_full_packets_processed
         )
+        difference_is_one = Signal(1, init=0)
+        m.d.sync += difference_is_one.eq(
+            self._number_of_full_packets_outputted + 1
+            == self._number_of_full_packets_processed
+        )
+        outputted_packet = Signal(1, init=0)
+        m.d.sync += outputted_packet.eq(0)
 
-        @def_method(m, self.dout, ready=full_packet_in_filtered_queue)
+        @def_method(
+            m,
+            self.dout,
+            ready=(
+                (
+                    full_packet_in_filtered_queue
+                    & ~(outputted_packet & difference_is_one)
+                )
+                | new_full_packet_in_filtered_queue
+            ),
+        )
         def _():
             word = self._fifo_output_filtered.read(m)
             with m.If(word["end_of_packet"] == 1):
                 m.d.sync += self._number_of_full_packets_outputted.eq(
                     self._number_of_full_packets_outputted + 1
                 )
+                m.d.sync += outputted_packet.eq(1)
             return word
 
         return m
