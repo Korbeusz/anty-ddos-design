@@ -7,9 +7,9 @@ from transactron.lib.simultaneous import condition
 from mur.count.RollingCountMinSketch import RollingCountMinSketch
 from mur.count.VolCounter import VolCounter
 
-#from transactron.lib import logging
+# from transactron.lib import logging
 
-#log = logging.HardwareLogger("cmsvolcontroller")
+# log = logging.HardwareLogger("cmsvolcontroller")
 __all__ = ["CMSVolController"]
 
 
@@ -122,22 +122,47 @@ class CMSVolController(Elaboratable):
         ]
 
         self._current_mode = Signal(1)
-        with Transaction().body(m):
-            sip = self._fifo_sip.read(m)
-            dip = self._fifo_dip.read(m)
-            dport = self._fifo_dport.read(m)
-            s = self._fifo_len.read(m)
-
+        # signal for queue reads
+        sip = Signal(32)
+        sip_v = Signal(1)
+        dip = Signal(32)
+        dip_v = Signal(1)
+        dport = Signal(16)
+        dport_v = Signal(1)
+        s = Signal(16)
+        s_v = Signal(1)
+        all_v = Signal(1)
+        m.d.comb += all_v.eq(sip_v & dip_v & dport_v & s_v)
+        with Transaction().body(m, request=all_v):
             self._current_mode = self.rcms_sipdip.input(
-                m, data=Cat(sip["data"], dip["data"])
+                m, data=Cat(sip, dip)
             )["mode"]
-            self.rcms_dportdip.input(m, data=Cat(dport["data"], dip["data"]))
-            self.rcms_siplen.input(m, data=Cat(sip["data"], s["data"]))
+            self.rcms_dportdip.input(m, data=Cat(dport, dip))
+            self.rcms_siplen.input(m, data=Cat(sip, s))
             with m.If(self._current_mode == 0):
                 m.d.sync += self._insert_requested.eq(self._insert_requested + 1)
             with m.Else():
                 m.d.sync += self._query_requested.eq(self._query_requested + 1)
-            self.vcnt.add_sample(m, data=s["data"])
+            self.vcnt.add_sample(m, data=s)
+            m.d.sync += [ 
+                sip_v.eq(0),
+                dip_v.eq(0),
+                dport_v.eq(0),
+                s_v.eq(0),
+            ]
+
+        with Transaction().body(m,request=all_v | ~sip_v):
+            m.d.sync += sip.eq(self._fifo_sip.read(m)["data"])
+            m.d.sync += sip_v.eq(1)
+        with Transaction().body(m, request=all_v | ~dip_v):
+            m.d.sync += dip.eq(self._fifo_dip.read(m)["data"])
+            m.d.sync += dip_v.eq(1)
+        with Transaction().body(m, request=all_v | ~dport_v):
+            m.d.sync += dport.eq(self._fifo_dport.read(m)["data"])
+            m.d.sync += dport_v.eq(1)
+        with Transaction().body(m, request=all_v | ~s_v):
+            m.d.sync += s.eq(self._fifo_len.read(m)["data"])
+            m.d.sync += s_v.eq(1)
 
         with Transaction().body(m):
             res = self.vcnt.result(m)
@@ -176,7 +201,7 @@ class CMSVolController(Elaboratable):
                 self.rcms_siplen.output(m)["count"] > self.discover_threshold
             )
             m.d.sync += q_valid.eq(q["valid"])
-            #log.debug(m, q["valid"], "{:x}", q1_data | q2_data | q3_data)
+            # log.debug(m, q["valid"], "{:x}", q1_data | q2_data | q3_data)
 
         with m.If(self._all_query_received & self._inserts_difference):
             m.d.sync += self._out.eq(self._inserts_difference)
