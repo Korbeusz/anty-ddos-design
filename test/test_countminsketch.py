@@ -24,7 +24,7 @@ class TestCountMinSketch(TestCaseWithSimulator):
 
         # ── Design parameters ─────────────────────────────────────
         self.depth = 4  # number of hash rows
-        self.width = 32  # buckets per row
+        self.width = 2**9  # buckets per row
         self.counter_width = 32
         self.data_width = 32
 
@@ -41,7 +41,7 @@ class TestCountMinSketch(TestCaseWithSimulator):
         self.model = [[0] * self.width for _ in range(self.depth)]
 
         # ── Random operation trace ────────────────────────────────
-        self.operation_count = 20_000
+        self.operation_count = 10_000
         #                  kind          payload
         #   ops[i] = ("insert"|"query"|"clear",  int | None)
         self.ops: list[tuple[str, int | None]] = []
@@ -94,7 +94,7 @@ class TestCountMinSketch(TestCaseWithSimulator):
             else:  # kind == "clear"
                 await self.dut.clear.call_try(sim, {})
                 # Allow the DUT time to sweep the memory
-                for _ in range(self.width + 20):
+                for _ in range(self.width + 25):
                     await sim.tick()
 
     # ──────────────────────────────────────────────────────────────
@@ -107,10 +107,10 @@ class TestCountMinSketch(TestCaseWithSimulator):
             # If the RTL exposes a *valid* field use it; otherwise assume ready
             if resp["valid"] == 0:
                 continue  # back‑pressure the FIFO until a real response
-            print(
-                f"query_resp: {resp['count']} (expected: {self.expected[0]['count']})"
-            )
-            ##assert resp["count"] == self.expected.popleft()["count"]
+            # print(
+            #    f"query_resp: {resp['count']} (expected: {self.expected[0]['count']})"
+            # )
+            assert resp["count"] == self.expected.popleft()["count"]
             if resp["count"] != 0:
                 print(f"query_resp: {resp['count']}")
 
@@ -124,6 +124,7 @@ class TestCountMinSketch(TestCaseWithSimulator):
             counter_width=self.counter_width,
             input_data_width=self.data_width,
             hash_params=self.hash_params,
+            log_block_size=8,
         )
         self.dut = SimpleTestCircuit(core)
 

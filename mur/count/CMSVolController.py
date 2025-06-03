@@ -134,9 +134,7 @@ class CMSVolController(Elaboratable):
         all_v = Signal(1)
         m.d.comb += all_v.eq(sip_v & dip_v & dport_v & s_v)
         with Transaction().body(m, request=all_v):
-            self._current_mode = self.rcms_sipdip.input(
-                m, data=Cat(sip, dip)
-            )["mode"]
+            self._current_mode = self.rcms_sipdip.input(m, data=Cat(sip, dip))["mode"]
             self.rcms_dportdip.input(m, data=Cat(dport, dip))
             self.rcms_siplen.input(m, data=Cat(sip, s))
             with m.If(self._current_mode == 0):
@@ -144,14 +142,14 @@ class CMSVolController(Elaboratable):
             with m.Else():
                 m.d.sync += self._query_requested.eq(self._query_requested + 1)
             self.vcnt.add_sample(m, data=s)
-            m.d.sync += [ 
+            m.d.sync += [
                 sip_v.eq(0),
                 dip_v.eq(0),
                 dport_v.eq(0),
                 s_v.eq(0),
             ]
 
-        with Transaction().body(m,request=all_v | ~sip_v):
+        with Transaction().body(m, request=all_v | ~sip_v):
             m.d.sync += sip.eq(self._fifo_sip.read(m)["data"])
             m.d.sync += sip_v.eq(1)
         with Transaction().body(m, request=all_v | ~dip_v):
@@ -185,34 +183,36 @@ class CMSVolController(Elaboratable):
         self._query_decision = Signal(32)
         self._out = Signal(5)
         self._out_valid = Signal(1)
-        # for now design is simplified it should be sum calculated in pipeline
-        q1_data = Signal()
-        q2_data = Signal()
-        q3_data = Signal()
+        self._out_valid2 = Signal(1)
+        q1_data = Signal(32)
+        q2_data = Signal(32)
+        q3_data = Signal(32)
+        q_sum = Signal(32)
+
         q_valid = Signal(1)
-        m.d.sync += self._out_valid.eq(0)
+        m.d.sync += self._out_valid.eq(q_valid)
+        m.d.sync += self._out_valid2.eq(self._out_valid)
         with Transaction().body(m):
             q = self.rcms_sipdip.output(m)
-            m.d.sync += q1_data.eq((q["count"] > self.discover_threshold))
-            m.d.sync += q2_data.eq(
-                self.rcms_dportdip.output(m)["count"] > self.discover_threshold
-            )
-            m.d.sync += q3_data.eq(
-                self.rcms_siplen.output(m)["count"] > self.discover_threshold
-            )
+            m.d.sync += q1_data.eq(q["count"])
+            m.d.sync += q2_data.eq(self.rcms_dportdip.output(m)["count"])
+            m.d.sync += q3_data.eq(self.rcms_siplen.output(m)["count"])
             m.d.sync += q_valid.eq(q["valid"])
             # log.debug(m, q["valid"], "{:x}", q1_data | q2_data | q3_data)
+
+        with m.If(q_valid):
+            m.d.sync += q_sum.eq(q1_data + q2_data + q3_data)
 
         with m.If(self._all_query_received & self._inserts_difference):
             m.d.sync += self._out.eq(self._inserts_difference)
             m.d.sync += self._insert_received.eq(self._insert_requested)
-            m.d.sync += self._out_valid.eq(1)
-        with m.If(~self._all_query_received & q_valid):
-            m.d.sync += self._out_valid.eq(1)
+            m.d.sync += self._out_valid2.eq(1)
+        with m.If(~self._all_query_received & self._out_valid):
+            m.d.sync += self._out_valid2.eq(1)
             m.d.sync += self._query_received.eq(self._query_received + 1)
-            m.d.sync += self._out.eq(q1_data | q2_data | q3_data)
-        with Transaction().body(m, request=self._out_valid):
+            m.d.sync += self._out.eq(q_sum > self.discover_threshold)
 
+        with Transaction().body(m, request=self._out_valid2):
             self._fifo_out.write(m, {"data": self._out})
 
         return m

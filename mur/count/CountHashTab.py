@@ -4,9 +4,6 @@ from transactron import *
 from amaranth.lib.memory import Memory as memory
 from mur.count.hash import Hash
 
-#from transactron.lib import logging
-
-#log = logging.HardwareLogger("counthashtab")
 __all__ = ["CountHashTab"]
 
 
@@ -38,6 +35,7 @@ class CountHashTab(Elaboratable):
         size: int,
         counter_width: int,
         input_data_width: int,
+        log_block_size: int = 11,
         hash_a: int = 1,
         hash_b: int = 0,
     ):
@@ -62,15 +60,20 @@ class CountHashTab(Elaboratable):
         self.hash_a = Signal(32, init=hash_a % self._P)
         self.hash_b = Signal(32, init=hash_b % self._P)
 
+        self.log_block_size = log_block_size
         self._memoryblocks: list[memory] = []
         self._write_ports = []
         self._read_ports = []
-        for i in range(size // 512):
-            self._block = memory(shape=counter_width, depth=512, init=[0] * 512)
+        for i in range(size // (1 << self.log_block_size)):
+            self._block = memory(
+                shape=counter_width,
+                depth=(1 << self.log_block_size),
+                init=[0] * (1 << self.log_block_size),
+            )
             setattr(self, f"_block_{i}", self._block)
             self._memoryblocks.append(self._block)
             wr = self._block.write_port(domain="sync")
-            rd = self._block.read_port(domain="sync")
+            rd = self._block.read_port(domain="sync", transparent_for=[wr])
             setattr(self, f"_wr_{i}", wr)
             setattr(self, f"_rd_{i}", rd)
             self._write_ports.append(wr)
@@ -83,11 +86,15 @@ class CountHashTab(Elaboratable):
         req_start = Signal()
         req_save = Signal()
         req_ready = Signal()
+        req_address = Signal(self.log_block_size)
+        req_adress_before = Signal(self.log_block_size)
+        req_adress_before_before = Signal(self.log_block_size)
         req_final_answer_ready = Signal()
-        
+        mem_idx_before = Signal(range(len(self._memoryblocks)))
         mem_idx = Signal(range(len(self._memoryblocks)))
         mem_idx_next = Signal(range(len(self._memoryblocks)))
         read_mult = [Signal() for _ in range(len(self._read_ports))]
+        read_mult_before = [Signal() for _ in range(len(self._read_ports))]
 
         req_read_value = [
             Signal(self.counter_width) for _ in range(len(self._read_ports))
@@ -96,9 +103,8 @@ class CountHashTab(Elaboratable):
         inc_start = Signal()
         insert_incrementing = Signal()
         insert_writing = Signal()
-
+        clr_addr = Signal(self.log_block_size)
         clr_running = Signal()
-        clr_addr = Signal(range(self.size))
         clr_waiting = Signal(range(64))
 
         for wr, rd in zip(self._write_ports, self._read_ports):
@@ -116,67 +122,60 @@ class CountHashTab(Elaboratable):
         ]
 
         m.d.sync += mem_idx.eq(mem_idx_next)
-        address_mask = (1 << 9) - 1
+        m.d.sync += mem_idx_before.eq(mem_idx)
+        m.d.sync += [
+            req_adress_before.eq(req_address),
+            req_adress_before_before.eq(req_adress_before),
+        ]
+        address_mask = (1 << self.log_block_size) - 1
 
         with Transaction().body(m):
             res = self.query_hash.result(m)
-            # log.debug(
-            #     m,
-            #     res["hash"] == 866,
-            #     " query {:d} {:d}",
-            #     res["hash"] & address_mask,
-            #     res["hash"] >> 9,
-            # )
+            m.d.sync += req_address.eq(res["hash"] & address_mask)
             with m.If(res["valid"]):
                 for i, rd in enumerate(self._read_ports):
                     m.d.sync += rd.addr.eq(res["hash"] & address_mask)
                 m.d.sync += [
                     req_start.eq(1),
-                    mem_idx_next.eq((res["hash"] >> 9)),
+                    mem_idx_next.eq((res["hash"] >> self.log_block_size)),
                 ]
 
-        for i, rmul in enumerate(read_mult):
+        for i, (rmul, rmulb) in enumerate(zip(read_mult, read_mult_before)):
             m.d.sync += rmul.eq(mem_idx == i)
+            m.d.sync += rmulb.eq(rmul)
 
         for req_read, rd in zip(req_read_value, self._read_ports):
-            #log.debug(m, rd.data, "read not zero")
             m.d.sync += req_read.eq(rd.data)
 
-        write_addr_next_next = Signal(range(512))
-        write_addr_next = Signal(range(512))
-        write_addr = Signal(range(512))
+        write_addr_next_next = Signal(self.log_block_size)
+        write_addr_next = Signal(self.log_block_size)
+        write_addr = Signal(self.log_block_size)
 
         m.d.sync += write_addr_next.eq(write_addr_next_next)
         m.d.sync += write_addr.eq(write_addr_next)
         with Transaction().body(m):
             res = self.insert_hash.result(m)
-            # log.debug(
-            #     m,
-            #     True,
-            #     " insert {:d} {:d}",
-            #     res["hash"] & address_mask,
-            #     (res["hash"] >> 9) & 1,
-            # )
             with m.If(res["valid"]):
                 for i, rd in enumerate(self._read_ports):
                     m.d.sync += rd.addr.eq(res["hash"] & address_mask)
                 m.d.sync += [
                     inc_start.eq(1),
-                    mem_idx_next.eq((res["hash"] >> 9)),
+                    mem_idx_next.eq((res["hash"] >> self.log_block_size)),
                     write_addr_next_next.eq(res["hash"] & address_mask),
                 ]
 
+        extra_add_write = Signal()
+        m.d.sync += extra_add_write.eq(0)
+        with m.If(
+            insert_writing
+            & (write_addr_next == write_addr)
+            & (mem_idx == mem_idx_before)
+        ):
+            m.d.sync += extra_add_write.eq(1)
+
         for rmul, req_read, wr in zip(read_mult, req_read_value, self._write_ports):
             with m.If(rmul):
-                # log.debug(
-                #    m,
-                #    insert_writing,
-                ##    " write {:d} {:d} {:d}",
-                #    mem_idx,
-                #    req_read + 1,
-                #    write_addr,
-                # )
-                m.d.sync += wr.data.eq(req_read + 1)
+                m.d.sync += wr.data.eq(req_read + 1 + extra_add_write)
                 m.d.sync += [wr.en.eq(insert_writing), wr.addr.eq(write_addr)]
 
         with m.If(clr_waiting > 0):
@@ -194,7 +193,7 @@ class CountHashTab(Elaboratable):
                 m.d.sync += wr.addr.eq(wr.addr + 1)
                 m.d.sync += wr.data.eq(0)
                 m.d.sync += wr.en.eq(1)
-                with m.If(wr.addr == 512 - 2):
+                with m.If(wr.addr == (1 << self.log_block_size) - 2):
                     m.d.sync += clr_running.eq(0)
 
         @def_method(m, self.insert)
@@ -202,12 +201,24 @@ class CountHashTab(Elaboratable):
             self.insert_hash.input(m, data)
 
         req_answer = Signal(self.counter_width)
-        for i, rmul in enumerate(read_mult):
+        add_inc_before = Signal()
+        add_inc_before2 = Signal()
+
+        m.d.sync += add_inc_before.eq(0)
+        m.d.sync += add_inc_before2.eq(0)
+        for i, wr in enumerate(self._write_ports):
+            with m.If(wr.en & (wr.addr == req_adress_before) & (i == mem_idx)):
+                m.d.sync += add_inc_before.eq(1)
+        with m.If(
+            insert_writing
+            & (req_adress_before == write_addr)
+            & (mem_idx == mem_idx_before)
+        ):
+            m.d.sync += add_inc_before2.eq(1)
+
+        for rmul, wr, rw in zip(read_mult, self._write_ports, req_read_value):
             with m.If(rmul):
-                # log.debug(
-                #    m, True, " read {:d} mem idx {:d}", req_read_value[i], mem_idx
-                # )
-                m.d.sync += req_answer.eq(req_read_value[i])
+                m.d.sync += req_answer.eq(rw + add_inc_before + add_inc_before2)
 
         @def_method(m, self.query_resp)
         def _():

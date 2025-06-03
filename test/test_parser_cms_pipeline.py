@@ -233,11 +233,11 @@ class TestParserCMSVol(TestCaseWithSimulator):
     # ------------------------------------------------------------------
     def test_pipeline(self):
         core = ParserCMSVol(
-            depth=4,
+            depth=8,
             width=2**14,
             counter_width=32,
             window=int(1 / CYCLE_TIME),
-            volume_threshold=5_000,
+            volume_threshold=100_000 // RATE_SCALE,
             cms_fifo_depth=16,
         )
         self.dut = SimpleTestCircuit(core)

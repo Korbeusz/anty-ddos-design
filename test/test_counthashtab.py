@@ -26,12 +26,12 @@ class TestCountHashTab(TestCaseWithSimulator):
         seed(42)
 
         # ── DUT parameters ────────────────────────────────────────────
-        self.size = 2**10  # number of hash buckets
+        self.size = 2**9  # number of hash buckets
         self.counter_width = 32
         self.data_width = 32
 
         # ── Random operation trace ------------------------------------
-        self.operation_count = 2000
+        self.operation_count = 5000
         #               kind          payload
         #   ops[i]  = ("insert"|"query"|"clear",  data:int | None)
         self.ops: list[tuple[str, int | None]] = []
@@ -73,7 +73,7 @@ class TestCountHashTab(TestCaseWithSimulator):
                 data = randint(0, (1 << self.data_width) - 1)
                 self.ops.append(("query", data))
                 self.expected.append({"count": self.model[h(data)]})
-                print(f"query: {[h(data)]}")
+                print(f" query: {[h(data)]} -> {self.model[h(data)]}")
 
     # ------------------------------------------------------------------
     #  Test-bench processes
@@ -90,14 +90,9 @@ class TestCountHashTab(TestCaseWithSimulator):
 
             if kind == "insert":
                 await self.dut.insert.call_try(sim, {"data": data})
-                await sim.tick()
-                await sim.tick()
-                await sim.tick()
             elif kind == "query":
                 await self.dut.query_req.call_try(sim, {"data": data})
-                await sim.tick()
-                await sim.tick()
-                await sim.tick()
+
             else:  # kind == "clear"
                 await self.dut.clear.call_try(sim, {})
                 for idx in range(self.size + 20):
@@ -113,8 +108,8 @@ class TestCountHashTab(TestCaseWithSimulator):
             if resp["valid"] == 0:
                 continue
             assert resp["count"] == self.expected.popleft()["count"]
-            # if resp["count"] != {"count": 0}:
-            #    print(f"query_resp: {resp['count']}")
+            if resp["count"] != 0:
+                print(f"query_resp: {resp['count']}")
 
     # ------------------------------------------------------------------
     #  Top-level test
@@ -125,6 +120,7 @@ class TestCountHashTab(TestCaseWithSimulator):
             size=self.size,
             counter_width=self.counter_width,
             input_data_width=self.data_width,
+            log_block_size=8,
             hash_a=self.a,
             hash_b=self.b,
         )

@@ -3,9 +3,10 @@ from transactron import *
 from amaranth.utils import ceil_log2
 
 from mur.count.CountHashTab import CountHashTab
-#from transactron.lib import logging
 
-#log = logging.HardwareLogger("countminsketch")
+# from transactron.lib import logging
+
+# log = logging.HardwareLogger("countminsketch")
 __all__ = ["CountMinSketch"]
 
 
@@ -43,6 +44,7 @@ class CountMinSketch(Elaboratable):
         counter_width: int,
         input_data_width: int,
         hash_params: list[tuple[int, int]] | None = None,
+        log_block_size: int = 11,
     ) -> None:
         if depth < 1:
             raise ValueError("depth must be ≥ 1")
@@ -64,6 +66,7 @@ class CountMinSketch(Elaboratable):
                 size=width,
                 counter_width=counter_width,
                 input_data_width=input_data_width,
+                log_block_size=log_block_size,
                 hash_a=a,
                 hash_b=b,
             )
@@ -74,10 +77,17 @@ class CountMinSketch(Elaboratable):
         m = TModule()
         m.submodules += self.rows
 
+        insert_next = Signal(1, init=0)
+        insert_next_data = Signal(self.input_data_width, init=0)
+        m.d.sync += insert_next.eq(0)
         @def_method(m, self.insert)
         def _(data):
+            m.d.sync += insert_next.eq(1)
+            m.d.sync += insert_next_data.eq(data)
+
+        with Transaction().body(m, request=insert_next):
             for row in self.rows:
-                row.insert(m, data=data)
+                row.insert(m, data=insert_next_data)
 
         min_tree = [Signal(self.counter_width) for _ in range(2 * self.depth)]
         valid_depth = [Signal(1) for _ in range(ceil_log2(self.depth) + 1)]
@@ -105,16 +115,29 @@ class CountMinSketch(Elaboratable):
 
         @def_method(m, self.query_resp)
         def _():
-            #log.debug(m,valid_depth[0], "{:x}", min_tree[1])
+            # log.debug(m,valid_depth[0], "{:x}", min_tree[1])
             return {"count": min_tree[1], "valid": valid_depth[0]}
 
+        req_next = Signal(1, init=0)
+        req_next_data = Signal(self.input_data_width, init=0)
+        m.d.sync += req_next.eq(0)
         @def_method(m, self.query_req)
         def _(data):
+            m.d.sync += req_next.eq(1)
+            m.d.sync += req_next_data.eq(data)
+        
+        with Transaction().body(m, request=req_next):
             for row in self.rows:
-                row.query_req(m, data=data)
+                row.query_req(m, data=req_next_data)
+
+        next_clear = Signal(1, init=0)
+        m.d.sync += next_clear.eq(0)
 
         @def_method(m, self.clear)
         def _():
+            m.d.sync += next_clear.eq(1)
+
+        with Transaction().body(m, request=next_clear):
             for row in self.rows:
                 row.clear(m)
 

@@ -49,8 +49,8 @@ class ParserCMSVol(Elaboratable):
     def __init__(
         self,
         *,
-        depth: int = 4,
-        width: int = 16_384,
+        depth: int = 8,
+        width: int = 2**14,
         counter_width: int = 32,
         hash_params: list[tuple[int, int]] | None = None,
         window: int = 2**16,
