@@ -203,7 +203,9 @@ class CountHashTab(Elaboratable):
         req_answer = Signal(self.counter_width)
         add_inc_before = Signal()
         add_inc_before2 = Signal()
+        add_inc = Signal(2)
 
+        m.d.sync += add_inc.eq(add_inc_before + add_inc_before2)
         m.d.sync += add_inc_before.eq(0)
         m.d.sync += add_inc_before2.eq(0)
         for i, wr in enumerate(self._write_ports):
@@ -216,13 +218,13 @@ class CountHashTab(Elaboratable):
         ):
             m.d.sync += add_inc_before2.eq(1)
 
-        for rmul, wr, rw in zip(read_mult, self._write_ports, req_read_value):
+        for rmul, rw in zip(read_mult, req_read_value):
             with m.If(rmul):
-                m.d.sync += req_answer.eq(rw + add_inc_before + add_inc_before2)
+                m.d.sync += req_answer.eq(rw)
 
         @def_method(m, self.query_resp)
         def _():
-            return {"count": req_answer, "valid": req_final_answer_ready}
+            return {"count": req_answer + add_inc, "valid": req_final_answer_ready}
 
         @def_method(m, self.query_req)
         def _(data):
