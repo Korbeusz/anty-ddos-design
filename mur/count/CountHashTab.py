@@ -89,6 +89,7 @@ class CountHashTab(Elaboratable):
         req_address = Signal(self.log_block_size)
         req_adress_before = Signal(self.log_block_size)
         req_adress_before_before = Signal(self.log_block_size)
+        req_add_inc = Signal()
         req_final_answer_ready = Signal()
         mem_idx_before = Signal(range(len(self._memoryblocks)))
         mem_idx = Signal(range(len(self._memoryblocks)))
@@ -115,7 +116,8 @@ class CountHashTab(Elaboratable):
             req_start.eq(0),
             req_save.eq(req_start),
             req_ready.eq(req_save),
-            req_final_answer_ready.eq(req_ready),
+            req_add_inc.eq(req_ready),
+            req_final_answer_ready.eq(req_add_inc),
             inc_start.eq(0),
             insert_incrementing.eq(inc_start),
             insert_writing.eq(insert_incrementing),
@@ -222,9 +224,12 @@ class CountHashTab(Elaboratable):
             with m.If(rmul):
                 m.d.sync += req_answer.eq(rw)
 
+        final_answer = Signal(self.counter_width)
+        m.d.sync += final_answer.eq(req_answer + add_inc)
+
         @def_method(m, self.query_resp)
         def _():
-            return {"count": req_answer + add_inc, "valid": req_final_answer_ready}
+            return {"count": final_answer, "valid": req_final_answer_ready}
 
         @def_method(m, self.query_req)
         def _(data):
