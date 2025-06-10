@@ -25,7 +25,7 @@ class TestRollingCountMinSketch(TestCaseWithSimulator):
 
         # ── Sketch parameters ──────────────────────────────────────────
         self.depth = 4
-        self.width = 32
+        self.width = 2**10
         self.counter_width = 32
         self.data_width = 32
         self.hash_params = [(row + 1, 0) for row in range(self.depth)]
@@ -42,7 +42,7 @@ class TestRollingCountMinSketch(TestCaseWithSimulator):
         self.mode = 0  # 0 = UPDATE, 1 = QUERY
 
         # ── Random operation trace ------------------------------------
-        self.operation_count = 25_000
+        self.operation_count = 20_000
         self.ops: list[tuple[str, int | None]] = []  # (kind, payload)
         self.expected = deque()  # queued QUERY outputs
 
@@ -50,7 +50,7 @@ class TestRollingCountMinSketch(TestCaseWithSimulator):
 
         for i in range(self.operation_count):
             # -------------- Possibly rotate roles --------------------
-            if (i - last_change_at) >= self.width and random() < 0.02:
+            if (i - last_change_at) >= (2**8 + 30) and random() < 0.02:
                 self._rotate_reference()  # update the model first
                 self.ops.append(("change_roles", None))
                 last_change_at = i
@@ -135,6 +135,7 @@ class TestRollingCountMinSketch(TestCaseWithSimulator):
             counter_width=self.counter_width,
             input_data_width=self.data_width,
             hash_params=self.hash_params,
+            log_block_size=8,
         )
         self.dut = SimpleTestCircuit(core)
 

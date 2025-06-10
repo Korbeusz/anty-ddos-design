@@ -45,6 +45,7 @@ class RollingCountMinSketch(Elaboratable):
         counter_width: int,
         input_data_width: int,
         hash_params: list[tuple[int, int]] | None = None,
+        log_block_size: int = 11,
     ) -> None:
         self.depth = depth
         self.width = width
@@ -62,6 +63,7 @@ class RollingCountMinSketch(Elaboratable):
             counter_width=counter_width,
             input_data_width=self.item_width,
             hash_params=hash_params,
+            log_block_size=log_block_size,
         )
         self._cms1 = CountMinSketch(
             depth=depth,
@@ -69,6 +71,7 @@ class RollingCountMinSketch(Elaboratable):
             counter_width=counter_width,
             input_data_width=self.item_width,
             hash_params=hash_params,
+            log_block_size=log_block_size,
         )
         self._cms2 = CountMinSketch(
             depth=depth,
@@ -76,6 +79,7 @@ class RollingCountMinSketch(Elaboratable):
             counter_width=counter_width,
             input_data_width=self.item_width,
             hash_params=hash_params,
+            log_block_size=log_block_size,
         )
 
         self._head = Signal(range(3), init=0)
